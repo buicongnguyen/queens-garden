@@ -1,0 +1,10 @@
+{
+  "name": "queens-garden",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "serve": "python -m http.server 4285",
+    "test": "node scripts/validate.js"
+  }
+}
