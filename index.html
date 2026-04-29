@@ -70,13 +70,54 @@
             </p>
           </div>
 
+          <section class="mobile-hud" aria-label="Mobile play controls">
+            <div class="mobile-hud-head">
+              <p class="status-heading">Mobile play</p>
+              <p class="mobile-hud-tip">
+                Tap tiles with the selected tool. Keep the board in view while
+                you switch pieces.
+              </p>
+            </div>
+            <div class="tool-row mobile-tool-row">
+              <button class="tool-button" data-tool="queen" type="button">
+                <img
+                  class="tool-icon"
+                  src="./assets/queen-token-192.png"
+                  alt=""
+                />
+                Queen
+              </button>
+              <button class="tool-button" data-tool="mark" type="button">
+                Mark X
+              </button>
+              <button class="tool-button" data-tool="erase" type="button">
+                Erase
+              </button>
+            </div>
+            <div class="mobile-stat-grid">
+              <article class="stat-card mobile-stat-card">
+                <p class="stat-label">Queens</p>
+                <p class="stat-value" data-queens-stat>0 / 0</p>
+              </article>
+              <article class="stat-card mobile-stat-card">
+                <p class="stat-label">Regions</p>
+                <p class="stat-value" data-regions-stat>0 / 0</p>
+              </article>
+              <article class="stat-card mobile-stat-card">
+                <p class="stat-label">Conflicts</p>
+                <p class="stat-value" data-conflicts-stat>0</p>
+              </article>
+            </div>
+            <p class="mobile-seed" data-seed-label>Seed: --</p>
+          </section>
+
           <div class="board-shell">
             <div class="board" id="board" aria-label="Queen puzzle board"></div>
           </div>
         </div>
 
         <aside class="side-panel">
-          <section class="panel-card">
+          <section class="panel-card desktop-panel">
             <div class="panel-head">
               <h2>Tools</h2>
               <p>Use the buttons below or press Q, X, and E.</p>
@@ -99,28 +140,28 @@
             </div>
           </section>
 
-          <section class="panel-card">
+          <section class="panel-card desktop-panel">
             <div class="panel-head">
               <h2>Progress</h2>
-              <p id="seed-label">Seed: --</p>
+              <p id="seed-label" data-seed-label>Seed: --</p>
             </div>
             <div class="stat-grid">
               <article class="stat-card">
                 <p class="stat-label">Queens</p>
-                <p class="stat-value" id="queens-stat">0 / 0</p>
+                <p class="stat-value" id="queens-stat" data-queens-stat>0 / 0</p>
               </article>
               <article class="stat-card">
                 <p class="stat-label">Regions</p>
-                <p class="stat-value" id="regions-stat">0 / 0</p>
+                <p class="stat-value" id="regions-stat" data-regions-stat>0 / 0</p>
               </article>
               <article class="stat-card">
                 <p class="stat-label">Conflicts</p>
-                <p class="stat-value" id="conflicts-stat">0</p>
+                <p class="stat-value" id="conflicts-stat" data-conflicts-stat>0</p>
               </article>
             </div>
           </section>
 
-          <section class="panel-card">
+          <section class="panel-card tips-panel">
             <div class="panel-head">
               <h2>How to play</h2>
             </div>

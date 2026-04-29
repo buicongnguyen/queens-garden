@@ -17,10 +17,10 @@ const newGameButton = document.querySelector("#new-game-button");
 const resetButton = document.querySelector("#reset-button");
 const revealButton = document.querySelector("#reveal-button");
 const statusText = document.querySelector("#status-text");
-const queensStat = document.querySelector("#queens-stat");
-const regionsStat = document.querySelector("#regions-stat");
-const conflictsStat = document.querySelector("#conflicts-stat");
-const seedLabel = document.querySelector("#seed-label");
+const queensStats = [...document.querySelectorAll("[data-queens-stat]")];
+const regionsStats = [...document.querySelectorAll("[data-regions-stat]")];
+const conflictsStats = [...document.querySelectorAll("[data-conflicts-stat]")];
+const seedLabels = [...document.querySelectorAll("[data-seed-label]")];
 const toolButtons = [...document.querySelectorAll("[data-tool]")];
 
 const state = {
@@ -142,24 +142,32 @@ function render() {
 
 function renderTools() {
   for (const button of toolButtons) {
-    button.classList.toggle("is-active", button.dataset.tool === state.activeTool);
+    const isActive = button.dataset.tool === state.activeTool;
+    button.classList.toggle("is-active", isActive);
+    button.setAttribute("aria-pressed", String(isActive));
     button.disabled = state.loading;
   }
 }
 
 function renderStats() {
   if (!state.puzzle || !state.analysis) {
-    queensStat.textContent = "0 / 0";
-    regionsStat.textContent = "0 / 0";
-    conflictsStat.textContent = "0";
-    seedLabel.textContent = "Seed: --";
+    updateText(queensStats, "0 / 0");
+    updateText(regionsStats, "0 / 0");
+    updateText(conflictsStats, "0");
+    updateText(seedLabels, "Seed: --");
     return;
   }
 
-  queensStat.textContent = `${state.analysis.queenCount} / ${state.puzzle.size}`;
-  regionsStat.textContent = `${state.analysis.completedRegions} / ${state.puzzle.size}`;
-  conflictsStat.textContent = String(state.analysis.conflicts.size);
-  seedLabel.textContent = `Seed: ${formatSeed(state.puzzle.seed)}`;
+  updateText(
+    queensStats,
+    `${state.analysis.queenCount} / ${state.puzzle.size}`,
+  );
+  updateText(
+    regionsStats,
+    `${state.analysis.completedRegions} / ${state.puzzle.size}`,
+  );
+  updateText(conflictsStats, String(state.analysis.conflicts.size));
+  updateText(seedLabels, `Seed: ${formatSeed(state.puzzle.seed)}`);
 }
 
 function renderStatus() {
@@ -299,4 +307,10 @@ function nextFrame() {
   return new Promise((resolve) => {
     requestAnimationFrame(() => resolve());
   });
+}
+
+function updateText(elements, value) {
+  for (const element of elements) {
+    element.textContent = value;
+  }
 }
