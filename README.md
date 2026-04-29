@@ -16,6 +16,12 @@ Queen's Garden is a browser puzzle inspired by Queens / 1-star Star Battle:
 
 - `npm test`
 
+## Deploy to GitHub Pages
+
+- GitHub Actions deploys the site automatically from `main`.
+- The workflow lives at `.github/workflows/deploy-pages.yml`.
+- The live site is published at `https://buicongnguyen.github.io/queens-garden/`.
+
 ## Notes
 
 - Boards are generated locally in the browser.
