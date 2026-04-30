@@ -73,12 +73,14 @@ export function createPuzzle(size, seed = randomSeed()) {
           continue;
         }
 
+        const palette = generatePalette(size, attemptSeed);
         const puzzle = {
           size,
           seed: attemptSeed,
           queens,
           regions,
-          palette: generatePalette(size, attemptSeed),
+          palette: palette.fills,
+          outlinePalette: palette.edges,
         };
 
         const optimized = optimizeRegions(
@@ -266,6 +268,59 @@ export function analyzePlayerBoard(puzzle, board) {
   };
 }
 
+export function findHint(puzzle, board) {
+  const analysis = analyzePlayerBoard(puzzle, board);
+
+  if (analysis.conflicts.size > 0) {
+    return {
+      type: "resolve-conflicts",
+      message:
+        "Resolve the red conflicts first. A hint only works when the current queens agree with the puzzle rules.",
+    };
+  }
+
+  const deduction = deriveLogicalDeductions(puzzle, board);
+
+  if (!deduction.consistent) {
+    return {
+      type: "dead-end",
+      message:
+        "Your current queens and marks leave no legal completion. Retry or remove a recent mark before asking for another hint.",
+    };
+  }
+
+  if (deduction.forced.length > 0) {
+    const choice = deduction.forced[0];
+    return {
+      type: "must-queen",
+      row: choice.row,
+      column: choice.column,
+      message: describeForcedReason(choice.reason, choice.row, choice.column),
+    };
+  }
+
+  if (deduction.impossible.length > 0) {
+    const choice = deduction.impossible[0];
+    return {
+      type: "not-queen",
+      row: choice.row,
+      column: choice.column,
+      blocker: choice.reason.blocker ?? null,
+      message: describeImpossibleReason(
+        choice.reason,
+        choice.row,
+        choice.column,
+      ),
+    };
+  }
+
+  return {
+    type: "no-deduction",
+    message:
+      "No forced move appears from the current queens and marks yet. Try narrowing a row, column, or colored region a little more.",
+  };
+}
+
 export function solutionBoard(puzzle) {
   const board = createEmptyBoard(puzzle.size);
 
@@ -312,6 +367,409 @@ function generateQueenPlacement(size, rng) {
   }
 
   return place(0) ? columns : null;
+}
+
+function deriveLogicalDeductions(puzzle, board) {
+  const queenOrigins = new Map();
+
+  for (let row = 0; row < puzzle.size; row += 1) {
+    for (let column = 0; column < puzzle.size; column += 1) {
+      if (board[row][column] === CELL_STATE.QUEEN) {
+        queenOrigins.set(cellKey(row, column), {
+          kind: "placed",
+          row,
+          column,
+        });
+      }
+    }
+  }
+
+  let changed = true;
+  let finalBlockedReasons = null;
+
+  while (changed) {
+    changed = false;
+
+    const scan = scanLogicalState(puzzle, board, queenOrigins);
+
+    if (!scan.consistent) {
+      return {
+        consistent: false,
+        forced: [],
+        impossible: [],
+      };
+    }
+
+    finalBlockedReasons = scan.blockedReasons;
+
+    for (const forced of scan.forced) {
+      const key = cellKey(forced.row, forced.column);
+
+      if (queenOrigins.has(key)) {
+        continue;
+      }
+
+      queenOrigins.set(key, forced.reason);
+      changed = true;
+    }
+  }
+
+  const forced = [];
+  const impossible = [];
+
+  for (let row = 0; row < puzzle.size; row += 1) {
+    for (let column = 0; column < puzzle.size; column += 1) {
+      const key = cellKey(row, column);
+      const origin = queenOrigins.get(key);
+
+      if (origin && board[row][column] !== CELL_STATE.QUEEN) {
+        forced.push({
+          row,
+          column,
+          reason: origin,
+        });
+        continue;
+      }
+
+      if (board[row][column] !== CELL_STATE.EMPTY) {
+        continue;
+      }
+
+      const reason = finalBlockedReasons[row][column];
+
+      if (!reason || reason.kind === "marked") {
+        continue;
+      }
+
+      impossible.push({
+        row,
+        column,
+        reason,
+      });
+    }
+  }
+
+  forced.sort(compareHintCells);
+  impossible.sort(compareHintCells);
+
+  return {
+    consistent: true,
+    forced,
+    impossible,
+  };
+}
+
+function scanLogicalState(puzzle, board, queenOrigins) {
+  const rowQueens = Array(puzzle.size).fill(null);
+  const columnQueens = Array(puzzle.size).fill(null);
+  const regionQueens = Array(puzzle.size).fill(null);
+  const blockedReasons = Array.from({ length: puzzle.size }, () =>
+    Array(puzzle.size).fill(null),
+  );
+  const candidates = Array.from({ length: puzzle.size }, () =>
+    Array(puzzle.size).fill(false),
+  );
+  const forced = [];
+
+  for (const [key, origin] of queenOrigins.entries()) {
+    const [rowText, columnText] = key.split(":");
+    const row = Number(rowText);
+    const column = Number(columnText);
+    const region = puzzle.regions[row][column];
+    rowQueens[row] = { row, column, origin };
+    columnQueens[column] = { row, column, origin };
+    regionQueens[region] = { row, column, origin };
+  }
+
+  for (let row = 0; row < puzzle.size; row += 1) {
+    for (let column = 0; column < puzzle.size; column += 1) {
+      const key = cellKey(row, column);
+
+      if (queenOrigins.has(key)) {
+        candidates[row][column] = true;
+        continue;
+      }
+
+      if (board[row][column] === CELL_STATE.MARK) {
+        blockedReasons[row][column] = { kind: "marked" };
+        continue;
+      }
+
+      const region = puzzle.regions[row][column];
+      const rowQueen = rowQueens[row];
+      const columnQueen = columnQueens[column];
+      const regionQueen = regionQueens[region];
+      const diagonalQueen = findDiagonalQueen(queenOrigins, row, column);
+
+      if (rowQueen) {
+        blockedReasons[row][column] = {
+          kind: "row-queen",
+          blocker: {
+            row: rowQueen.row,
+            column: rowQueen.column,
+            origin: rowQueen.origin,
+          },
+        };
+        continue;
+      }
+
+      if (columnQueen) {
+        blockedReasons[row][column] = {
+          kind: "column-queen",
+          blocker: {
+            row: columnQueen.row,
+            column: columnQueen.column,
+            origin: columnQueen.origin,
+          },
+        };
+        continue;
+      }
+
+      if (regionQueen) {
+        blockedReasons[row][column] = {
+          kind: "region-queen",
+          blocker: {
+            row: regionQueen.row,
+            column: regionQueen.column,
+            origin: regionQueen.origin,
+          },
+        };
+        continue;
+      }
+
+      if (diagonalQueen) {
+        blockedReasons[row][column] = {
+          kind: "diagonal-queen",
+          blocker: diagonalQueen,
+        };
+        continue;
+      }
+
+      candidates[row][column] = true;
+    }
+  }
+
+  for (let row = 0; row < puzzle.size; row += 1) {
+    if (rowQueens[row]) {
+      continue;
+    }
+
+    const options = [];
+
+    for (let column = 0; column < puzzle.size; column += 1) {
+      if (candidates[row][column]) {
+        options.push({ row, column });
+      }
+    }
+
+    if (options.length === 0) {
+      return {
+        consistent: false,
+        blockedReasons,
+        forced: [],
+      };
+    }
+
+    if (options.length === 1) {
+      forced.push({
+        row: options[0].row,
+        column: options[0].column,
+        reason: {
+          kind: "row-single",
+          row: options[0].row,
+          column: options[0].column,
+        },
+      });
+    }
+  }
+
+  for (let column = 0; column < puzzle.size; column += 1) {
+    if (columnQueens[column]) {
+      continue;
+    }
+
+    const options = [];
+
+    for (let row = 0; row < puzzle.size; row += 1) {
+      if (candidates[row][column]) {
+        options.push({ row, column });
+      }
+    }
+
+    if (options.length === 0) {
+      return {
+        consistent: false,
+        blockedReasons,
+        forced: [],
+      };
+    }
+
+    if (options.length === 1) {
+      forced.push({
+        row: options[0].row,
+        column: options[0].column,
+        reason: {
+          kind: "column-single",
+          row: options[0].row,
+          column: options[0].column,
+        },
+      });
+    }
+  }
+
+  for (let region = 0; region < puzzle.size; region += 1) {
+    if (regionQueens[region]) {
+      continue;
+    }
+
+    const options = [];
+
+    for (let row = 0; row < puzzle.size; row += 1) {
+      for (let column = 0; column < puzzle.size; column += 1) {
+        if (
+          puzzle.regions[row][column] === region &&
+          candidates[row][column]
+        ) {
+          options.push({ row, column });
+        }
+      }
+    }
+
+    if (options.length === 0) {
+      return {
+        consistent: false,
+        blockedReasons,
+        forced: [],
+      };
+    }
+
+    if (options.length === 1) {
+      forced.push({
+        row: options[0].row,
+        column: options[0].column,
+        reason: {
+          kind: "region-single",
+          row: options[0].row,
+          column: options[0].column,
+          region,
+        },
+      });
+    }
+  }
+
+  return {
+    consistent: true,
+    blockedReasons,
+    forced,
+  };
+}
+
+function describeForcedReason(reason, row, column) {
+  if (reason.kind === "row-single") {
+    return `Hint: row ${row + 1} has only one legal square left, so column ${column + 1} must contain that queen.`;
+  }
+
+  if (reason.kind === "column-single") {
+    return `Hint: column ${column + 1} has only one legal square left, so row ${row + 1} must contain that queen.`;
+  }
+
+  if (reason.kind === "region-single") {
+    return `Hint: this colored region has only one legal square left, so row ${row + 1}, column ${column + 1} must be the queen.`;
+  }
+
+  return `Hint: row ${row + 1}, column ${column + 1} is forced by your current queens and marks.`;
+}
+
+function describeImpossibleReason(reason, row, column) {
+  if (reason.kind === "row-queen") {
+    return describeBlockedByStructure(
+      reason.blocker,
+      `Hint: row ${row + 1} already has its queen`,
+      row,
+      column,
+    );
+  }
+
+  if (reason.kind === "column-queen") {
+    return describeBlockedByStructure(
+      reason.blocker,
+      `Hint: column ${column + 1} already has its queen`,
+      row,
+      column,
+    );
+  }
+
+  if (reason.kind === "region-queen") {
+    return describeBlockedByStructure(
+      reason.blocker,
+      "Hint: this colored region already has its queen",
+      row,
+      column,
+    );
+  }
+
+  if (reason.kind === "diagonal-queen") {
+    return `Hint: row ${row + 1}, column ${column + 1} touches the queen at row ${reason.blocker.row + 1}, column ${reason.blocker.column + 1} diagonally, so it cannot be a queen.`;
+  }
+
+  return `Hint: row ${row + 1}, column ${column + 1} cannot be a queen with the current queens and marks.`;
+}
+
+function describeBlockedByStructure(blocker, prefix, row, column) {
+  if (!blocker || !blocker.origin) {
+    return `${prefix}, so row ${row + 1}, column ${column + 1} cannot be a queen.`;
+  }
+
+  if (blocker.origin.kind === "placed") {
+    return `${prefix} at row ${blocker.row + 1}, column ${blocker.column + 1}, so row ${row + 1}, column ${column + 1} cannot be a queen.`;
+  }
+
+  if (blocker.origin.kind === "row-single") {
+    return `${prefix} at row ${blocker.row + 1}, column ${blocker.column + 1}. That square is the only legal cell left in row ${blocker.origin.row + 1}, so row ${row + 1}, column ${column + 1} cannot be a queen.`;
+  }
+
+  if (blocker.origin.kind === "column-single") {
+    return `${prefix} at row ${blocker.row + 1}, column ${blocker.column + 1}. That square is the only legal cell left in column ${blocker.origin.column + 1}, so row ${row + 1}, column ${column + 1} cannot be a queen.`;
+  }
+
+  if (blocker.origin.kind === "region-single") {
+    return `${prefix} at row ${blocker.row + 1}, column ${blocker.column + 1}. That square is the only legal cell left in its colored region, so row ${row + 1}, column ${column + 1} cannot be a queen.`;
+  }
+
+  return `${prefix} at row ${blocker.row + 1}, column ${blocker.column + 1}, so row ${row + 1}, column ${column + 1} cannot be a queen.`;
+}
+
+function findDiagonalQueen(queenOrigins, row, column) {
+  for (const [rowStep, columnStep] of [
+    [-1, -1],
+    [-1, 1],
+    [1, -1],
+    [1, 1],
+  ]) {
+    const nextRow = row + rowStep;
+    const nextColumn = column + columnStep;
+    const key = cellKey(nextRow, nextColumn);
+
+    if (!queenOrigins.has(key)) {
+      continue;
+    }
+
+    return {
+      row: nextRow,
+      column: nextColumn,
+      origin: queenOrigins.get(key),
+    };
+  }
+
+  return null;
+}
+
+function compareHintCells(left, right) {
+  if (left.row !== right.row) {
+    return left.row - right.row;
+  }
+
+  return left.column - right.column;
 }
 
 function generateRegions(size, queens, rng) {
@@ -679,20 +1137,29 @@ function countAssignedNeighbors(regions, row, column, size) {
 }
 
 function generatePalette(size, seed) {
-  const rng = createRng(mixSeed(seed, 0x6d2b79f5));
-  const startHue = Math.floor(rng() * 360);
-  const colors = [];
+  const swatches = [
+    { fill: "hsl(12 94% 74%)", edge: "hsl(12 66% 40%)" },
+    { fill: "hsl(42 96% 72%)", edge: "hsl(42 72% 38%)" },
+    { fill: "hsl(84 74% 72%)", edge: "hsl(84 48% 34%)" },
+    { fill: "hsl(148 70% 70%)", edge: "hsl(148 48% 34%)" },
+    { fill: "hsl(198 84% 73%)", edge: "hsl(198 58% 38%)" },
+    { fill: "hsl(248 82% 76%)", edge: "hsl(248 50% 42%)" },
+    { fill: "hsl(302 68% 74%)", edge: "hsl(302 44% 40%)" },
+    { fill: "hsl(338 88% 75%)", edge: "hsl(338 58% 42%)" },
+    { fill: "hsl(24 92% 72%)", edge: "hsl(24 68% 40%)" },
+    { fill: "hsl(174 64% 71%)", edge: "hsl(174 42% 34%)" },
+  ];
+  const offset = normalizeSeed(seed) % swatches.length;
+  const fills = [];
+  const edges = [];
 
   for (let index = 0; index < size; index += 1) {
-    const hue = (startHue + (360 / size) * index + rng() * 16) % 360;
-    const saturation = 66 + Math.floor(rng() * 12);
-    const lightness = 79 + Math.floor(rng() * 8);
-    colors.push(
-      `hsl(${Math.round(hue)} ${saturation}% ${lightness}%)`,
-    );
+    const swatch = swatches[(offset + index) % swatches.length];
+    fills.push(swatch.fill);
+    edges.push(swatch.edge);
   }
 
-  return colors;
+  return { fills, edges };
 }
 
 function createRng(seed) {

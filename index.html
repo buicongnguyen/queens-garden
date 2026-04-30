@@ -57,6 +57,9 @@
               <button id="reset-button" class="control-button" type="button">
                 Reset
               </button>
+              <button id="hint-button" class="control-button accent" type="button">
+                Hint
+              </button>
               <button id="reveal-button" class="control-button" type="button">
                 Reveal
               </button>
@@ -70,12 +73,20 @@
             </p>
           </div>
 
+          <div class="hint-card" id="hint-card">
+            <p class="status-heading">Hint</p>
+            <p class="hint-text" id="hint-text">
+              Hint reads the current queens and marks, then looks for cells
+              that are forced or impossible right now.
+            </p>
+          </div>
+
           <section class="mobile-hud" aria-label="Mobile play controls">
             <div class="mobile-hud-head">
               <p class="status-heading">Mobile play</p>
               <p class="mobile-hud-tip">
-                Tap tiles with the selected tool. Keep the board in view while
-                you switch pieces.
+                Tap once for a dot mark, tap the same tile again for a queen,
+                and tap once more to clear it.
               </p>
             </div>
             <div class="tool-row mobile-tool-row">
@@ -88,7 +99,7 @@
                 Queen
               </button>
               <button class="tool-button" data-tool="mark" type="button">
-                Mark X
+                Mark
               </button>
               <button class="tool-button" data-tool="erase" type="button">
                 Erase
@@ -132,7 +143,7 @@
                 Queen
               </button>
               <button class="tool-button" data-tool="mark" type="button">
-                Mark X
+                Mark
               </button>
               <button class="tool-button" data-tool="erase" type="button">
                 Erase
@@ -166,8 +177,8 @@
               <h2>How to play</h2>
             </div>
             <ul class="tips-list">
-              <li>Click with the active tool to place a queen, mark an X, or erase.</li>
-              <li>Right-click or Shift+click any cell to place a quick X mark.</li>
+              <li>On mobile, tap once for a dot mark, tap again for a queen, and tap once more to clear.</li>
+              <li>On desktop, click with the active tool, or right-click or Shift+click for a quick mark.</li>
               <li>Every colored region must hold exactly one queen.</li>
               <li>Rows and columns also need exactly one queen each.</li>
               <li>Queens may not sit on touching diagonals.</li>
