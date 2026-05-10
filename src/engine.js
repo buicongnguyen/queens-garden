@@ -4,7 +4,7 @@ export const CELL_STATE = Object.freeze({
   MARK: 2,
 });
 
-export const SUPPORTED_SIZES = Object.freeze([5, 6, 7, 8]);
+export const SUPPORTED_SIZES = Object.freeze([7, 8, 9, 10, 11, 12, 13]);
 
 const ORTHOGONAL_STEPS = Object.freeze([
   [1, 0],
@@ -13,16 +13,119 @@ const ORTHOGONAL_STEPS = Object.freeze([
   [0, -1],
 ]);
 
-const GENERATION_ATTEMPTS = 14;
-const REGION_ATTEMPTS = 12;
 const SOLUTION_SEARCH_LIMIT = 65;
 const LOCAL_SEARCH_MOVE_LIMIT = 30;
-const SEED_VARIATIONS = 5;
-const LOCAL_SEARCH_ITERATIONS = Object.freeze({
-  5: 700,
-  6: 1400,
-  7: 2200,
-  8: 3000,
+const SEARCH_BUDGETS = Object.freeze({
+  7: { seedVariations: 5, generationAttempts: 14, regionAttempts: 12, localSearchIterations: 2200 },
+  8: { seedVariations: 6, generationAttempts: 16, regionAttempts: 14, localSearchIterations: 3200 },
+  9: { seedVariations: 8, generationAttempts: 18, regionAttempts: 18, localSearchIterations: 4800 },
+  10: { seedVariations: 10, generationAttempts: 22, regionAttempts: 20, localSearchIterations: 6400 },
+  11: { seedVariations: 12, generationAttempts: 26, regionAttempts: 22, localSearchIterations: 8200 },
+  12: { seedVariations: 14, generationAttempts: 30, regionAttempts: 24, localSearchIterations: 10000 },
+  13: { seedVariations: 16, generationAttempts: 34, regionAttempts: 26, localSearchIterations: 12000 },
+});
+
+// Preset layouts keep the larger boards instant to load while still allowing
+// plenty of variety through seed-driven board symmetries and palette rotation.
+const PRESET_LAYOUTS = Object.freeze({
+  7: Object.freeze([
+    Object.freeze([
+      "EEEEEEF",
+      "DDDDDEF",
+      "DDDDDEF",
+      "EEEEGGF",
+      "CCCCGGF",
+      "ABBCGGF",
+      "AABCGGF",
+    ]),
+  ]),
+  8: Object.freeze([
+    Object.freeze([
+      "HGGGGAAA",
+      "HHHHGAGA",
+      "HHHBGGGA",
+      "HHHBEGGA",
+      "DDBBEFFA",
+      "DDBCEFAA",
+      "DDACEFAA",
+      "DAAAAAAA",
+    ]),
+  ]),
+  9: Object.freeze([
+    Object.freeze([
+      "EEHHGFCFF",
+      "EEHHGFFFF",
+      "EEEGGGGFF",
+      "GGGGFFFFF",
+      "DDDGAIIII",
+      "DDDDIICCC",
+      "BBHHICCCC",
+      "BBHHIHHHC",
+      "BBBIIHHCC",
+    ]),
+  ]),
+  10: Object.freeze([
+    Object.freeze([
+      "GEAAAAFIII",
+      "GEEFFFFIGI",
+      "GEEBBDFIGI",
+      "GECBBDFIGI",
+      "GECCDDFIGI",
+      "GEEEEEEGGI",
+      "GGGGGGGGGI",
+      "HHHHHHHHGI",
+      "HJJJJJJHHI",
+      "JJJJJJJJHH",
+    ]),
+  ]),
+  11: Object.freeze([
+    Object.freeze([
+      "AAAABJJJJJK",
+      "JAAJBBBJJJK",
+      "JAAJBCCCCJK",
+      "JJAJBBCDDJK",
+      "JJJJJJJJJJK",
+      "EEEEEEEEEKK",
+      "EFFGGGGGGKK",
+      "EEHGGGGGGKK",
+      "EEHHGGGGGKK",
+      "EHHHHHHHIIK",
+      "KKKKKKKKKKK",
+    ]),
+  ]),
+  12: Object.freeze([
+    Object.freeze([
+      "AAAAABBCCCDD",
+      "EEEABBCCCCDD",
+      "EEEEFBBCCCCC",
+      "EEGFFFCCCCCC",
+      "EEEFFFCHHCCI",
+      "EEFFFHHHHIII",
+      "EHHHHHJHHIIK",
+      "JJHJHJJKKIKK",
+      "JJHJJJJJKIIK",
+      "JJJJJJJJKKKK",
+      "JJJJKKKKKKLK",
+      "JJJJJJKKKKLL",
+    ]),
+  ]),
+  13: Object.freeze([
+    Object.freeze([
+      "LBBBCDDDDDEEE",
+      "BBBCCDDDDEEEE",
+      "BBCCCDDDDEEEE",
+      "CCCCDDEDEEEEE",
+      "CCFFFDEEEEEEE",
+      "CCCFDDEEEEEEE",
+      "CCFFEEEHHGGGG",
+      "FFFFEEEGGGGGG",
+      "FFFFFFEGGIIGI",
+      "FFFJJFFGKKIII",
+      "MMFJJFKKKKKII",
+      "MMMMJFFKKKAAA",
+      "MMMMJJFFFKAAA",
+    ]),
+  ]),
 });
 
 export function randomSeed() {
@@ -49,11 +152,18 @@ export function createPuzzle(size, seed = randomSeed()) {
   }
 
   const baseSeed = normalizeSeed(seed);
+  const presetPuzzle = createPresetPuzzle(size, baseSeed);
 
-  for (let seedVariant = 0; seedVariant < SEED_VARIATIONS; seedVariant += 1) {
+  if (presetPuzzle) {
+    return presetPuzzle;
+  }
+
+  const budget = SEARCH_BUDGETS[size];
+
+  for (let seedVariant = 0; seedVariant < budget.seedVariations; seedVariant += 1) {
     const variantSeed = mixSeed(baseSeed, seedVariant + 1);
 
-    for (let attempt = 0; attempt < GENERATION_ATTEMPTS; attempt += 1) {
+    for (let attempt = 0; attempt < budget.generationAttempts; attempt += 1) {
       const attemptSeed = mixSeed(variantSeed, attempt + 1);
       const queenRng = createRng(attemptSeed);
       const queens = generateQueenPlacement(size, queenRng);
@@ -62,7 +172,7 @@ export function createPuzzle(size, seed = randomSeed()) {
         continue;
       }
 
-      for (let regionAttempt = 0; regionAttempt < REGION_ATTEMPTS; regionAttempt += 1) {
+      for (let regionAttempt = 0; regionAttempt < budget.regionAttempts; regionAttempt += 1) {
         const regions = generateRegions(
           size,
           queens,
@@ -88,7 +198,7 @@ export function createPuzzle(size, seed = randomSeed()) {
           queens,
           regions,
           createRng(mixSeed(attemptSeed, regionAttempt + 409)),
-          LOCAL_SEARCH_ITERATIONS[size],
+          budget.localSearchIterations,
         );
 
         if (optimized.solutionCount === 1) {
@@ -114,16 +224,7 @@ function countRegionSolutions(size, regions, limit = 2) {
 
   let solutions = 0;
 
-  function search(row) {
-    if (solutions >= limit) {
-      return;
-    }
-
-    if (row === size) {
-      solutions += 1;
-      return;
-    }
-
+  function collectCandidates(row) {
     const candidates = [];
 
     for (let column = 0; column < size; column += 1) {
@@ -133,7 +234,15 @@ function countRegionSolutions(size, regions, limit = 2) {
         continue;
       }
 
-      if (row > 0 && Math.abs(placements[row - 1] - column) === 1) {
+      if (row > 0 && placements[row - 1] !== -1 && Math.abs(placements[row - 1] - column) === 1) {
+        continue;
+      }
+
+      if (
+        row + 1 < size &&
+        placements[row + 1] !== -1 &&
+        Math.abs(placements[row + 1] - column) === 1
+      ) {
         continue;
       }
 
@@ -141,12 +250,58 @@ function countRegionSolutions(size, regions, limit = 2) {
     }
 
     candidates.sort((left, right) => left.region - right.region);
+    return candidates;
+  }
+
+  function pickNextRow() {
+    let nextRow = -1;
+    let nextCandidates = null;
+
+    for (let row = 0; row < size; row += 1) {
+      if (placements[row] !== -1) {
+        continue;
+      }
+
+      const candidates = collectCandidates(row);
+
+      if (candidates.length === 0) {
+        return { row, candidates };
+      }
+
+      if (!nextCandidates || candidates.length < nextCandidates.length) {
+        nextRow = row;
+        nextCandidates = candidates;
+
+        if (candidates.length === 1) {
+          break;
+        }
+      }
+    }
+
+    return { row: nextRow, candidates: nextCandidates ?? [] };
+  }
+
+  function search(placedCount) {
+    if (solutions >= limit) {
+      return;
+    }
+
+    if (placedCount === size) {
+      solutions += 1;
+      return;
+    }
+
+    const { row, candidates } = pickNextRow();
+
+    if (candidates.length === 0) {
+      return;
+    }
 
     for (const candidate of candidates) {
       usedColumns[candidate.column] = 1;
       usedRegions[candidate.region] = 1;
       placements[row] = candidate.column;
-      search(row + 1);
+      search(placedCount + 1);
       placements[row] = -1;
       usedColumns[candidate.column] = 0;
       usedRegions[candidate.region] = 0;
@@ -197,11 +352,18 @@ export function analyzePlayerBoard(puzzle, board) {
   const rowCounts = Array(puzzle.size).fill(0);
   const columnCounts = Array(puzzle.size).fill(0);
   const regionCounts = Array(puzzle.size).fill(0);
+  const rowMarks = Array(puzzle.size).fill(0);
+  const columnMarks = Array(puzzle.size).fill(0);
   const queens = [];
   const queenKeys = new Set();
 
   for (let row = 0; row < puzzle.size; row += 1) {
     for (let column = 0; column < puzzle.size; column += 1) {
+      if (board[row][column] === CELL_STATE.MARK) {
+        rowMarks[row] += 1;
+        columnMarks[column] += 1;
+      }
+
       if (board[row][column] !== CELL_STATE.QUEEN) {
         continue;
       }
@@ -249,6 +411,27 @@ export function analyzePlayerBoard(puzzle, board) {
     }
   }
 
+  const rowViolations = new Set();
+  const columnViolations = new Set();
+
+  for (let row = 0; row < puzzle.size; row += 1) {
+    if (
+      rowCounts[row] > 1 ||
+      (rowCounts[row] === 0 && rowMarks[row] === puzzle.size)
+    ) {
+      rowViolations.add(row);
+    }
+  }
+
+  for (let column = 0; column < puzzle.size; column += 1) {
+    if (
+      columnCounts[column] > 1 ||
+      (columnCounts[column] === 0 && columnMarks[column] === puzzle.size)
+    ) {
+      columnViolations.add(column);
+    }
+  }
+
   const queenCount = queens.length;
   const solved =
     queenCount === puzzle.size &&
@@ -264,6 +447,8 @@ export function analyzePlayerBoard(puzzle, board) {
     regionCounts,
     completedRegions: regionCounts.filter((count) => count === 1).length,
     conflicts,
+    rowViolations,
+    columnViolations,
     solved,
   };
 }
@@ -329,6 +514,186 @@ export function solutionBoard(puzzle) {
   }
 
   return board;
+}
+
+function createPresetPuzzle(size, seed) {
+  const layouts = PRESET_LAYOUTS[size];
+
+  if (!layouts || layouts.length === 0) {
+    return null;
+  }
+
+  const layout = layouts[seed % layouts.length];
+  const transformIndex = Math.floor(seed / layouts.length) % 8;
+  const regions = transformRegions(parsePresetLayout(layout), transformIndex);
+  const queens = solveRegionColumns(size, regions);
+
+  if (!queens) {
+    return null;
+  }
+
+  const palette = generatePalette(size, seed);
+  return {
+    size,
+    seed,
+    queens,
+    regions,
+    palette: palette.fills,
+    outlinePalette: palette.edges,
+  };
+}
+
+function parsePresetLayout(layout) {
+  const regionIds = new Map();
+  let nextRegionId = 0;
+
+  return layout.map((rowText) =>
+    Array.from(rowText, (symbol) => {
+      if (!regionIds.has(symbol)) {
+        regionIds.set(symbol, nextRegionId);
+        nextRegionId += 1;
+      }
+
+      return regionIds.get(symbol);
+    }),
+  );
+}
+
+function transformRegions(regions, transformIndex) {
+  const size = regions.length;
+  const transformed = Array.from({ length: size }, () => Array(size).fill(-1));
+
+  for (let row = 0; row < size; row += 1) {
+    for (let column = 0; column < size; column += 1) {
+      const [nextRow, nextColumn] = mapTransformCoordinate(
+        row,
+        column,
+        size,
+        transformIndex % 8,
+      );
+      transformed[nextRow][nextColumn] = regions[row][column];
+    }
+  }
+
+  return transformed;
+}
+
+function mapTransformCoordinate(row, column, size, transformIndex) {
+  switch (transformIndex) {
+    case 1:
+      return [column, size - 1 - row];
+    case 2:
+      return [size - 1 - row, size - 1 - column];
+    case 3:
+      return [size - 1 - column, row];
+    case 4:
+      return [row, size - 1 - column];
+    case 5:
+      return [size - 1 - row, column];
+    case 6:
+      return [column, row];
+    case 7:
+      return [size - 1 - column, size - 1 - row];
+    default:
+      return [row, column];
+  }
+}
+
+function solveRegionColumns(size, regions) {
+  const usedColumns = new Uint8Array(size);
+  const usedRegions = new Uint8Array(size);
+  const placements = new Int16Array(size);
+  placements.fill(-1);
+
+  function collectCandidates(row) {
+    const candidates = [];
+
+    for (let column = 0; column < size; column += 1) {
+      const region = regions[row][column];
+
+      if (usedColumns[column] || usedRegions[region]) {
+        continue;
+      }
+
+      if (row > 0 && placements[row - 1] !== -1 && Math.abs(placements[row - 1] - column) === 1) {
+        continue;
+      }
+
+      if (
+        row + 1 < size &&
+        placements[row + 1] !== -1 &&
+        Math.abs(placements[row + 1] - column) === 1
+      ) {
+        continue;
+      }
+
+      candidates.push({ column, region });
+    }
+
+    return candidates;
+  }
+
+  function pickNextRow() {
+    let nextRow = -1;
+    let nextCandidates = null;
+
+    for (let row = 0; row < size; row += 1) {
+      if (placements[row] !== -1) {
+        continue;
+      }
+
+      const candidates = collectCandidates(row);
+
+      if (candidates.length === 0) {
+        return { row, candidates };
+      }
+
+      if (!nextCandidates || candidates.length < nextCandidates.length) {
+        nextRow = row;
+        nextCandidates = candidates;
+
+        if (candidates.length === 1) {
+          break;
+        }
+      }
+    }
+
+    return { row: nextRow, candidates: nextCandidates ?? [] };
+  }
+
+  function search(placedCount) {
+    if (placedCount === size) {
+      return true;
+    }
+
+    const { row, candidates } = pickNextRow();
+
+    if (candidates.length === 0) {
+      return false;
+    }
+
+    for (const candidate of candidates) {
+      usedColumns[candidate.column] = 1;
+      usedRegions[candidate.region] = 1;
+      placements[row] = candidate.column;
+
+      if (search(placedCount + 1)) {
+        return true;
+      }
+
+      placements[row] = -1;
+      usedColumns[candidate.column] = 0;
+      usedRegions[candidate.region] = 0;
+    }
+
+    return false;
+  }
+
+  if (!search(0)) {
+    return null;
+  }
+
+  return Array.from(placements);
 }
 
 function generateQueenPlacement(size, rng) {
@@ -1138,16 +1503,19 @@ function countAssignedNeighbors(regions, row, column, size) {
 
 function generatePalette(size, seed) {
   const swatches = [
-    { fill: "hsl(12 94% 74%)", edge: "hsl(12 66% 40%)" },
-    { fill: "hsl(42 96% 72%)", edge: "hsl(42 72% 38%)" },
-    { fill: "hsl(84 74% 72%)", edge: "hsl(84 48% 34%)" },
-    { fill: "hsl(148 70% 70%)", edge: "hsl(148 48% 34%)" },
-    { fill: "hsl(198 84% 73%)", edge: "hsl(198 58% 38%)" },
-    { fill: "hsl(248 82% 76%)", edge: "hsl(248 50% 42%)" },
-    { fill: "hsl(302 68% 74%)", edge: "hsl(302 44% 40%)" },
-    { fill: "hsl(338 88% 75%)", edge: "hsl(338 58% 42%)" },
-    { fill: "hsl(24 92% 72%)", edge: "hsl(24 68% 40%)" },
-    { fill: "hsl(174 64% 71%)", edge: "hsl(174 42% 34%)" },
+    { fill: "hsl(12 82% 60%)", edge: "hsl(12 74% 28%)" },
+    { fill: "hsl(40 84% 58%)", edge: "hsl(40 78% 26%)" },
+    { fill: "hsl(82 52% 58%)", edge: "hsl(82 54% 24%)" },
+    { fill: "hsl(144 48% 55%)", edge: "hsl(144 56% 24%)" },
+    { fill: "hsl(198 62% 58%)", edge: "hsl(198 72% 28%)" },
+    { fill: "hsl(246 58% 64%)", edge: "hsl(246 60% 30%)" },
+    { fill: "hsl(302 44% 61%)", edge: "hsl(302 52% 28%)" },
+    { fill: "hsl(340 66% 62%)", edge: "hsl(340 70% 30%)" },
+    { fill: "hsl(24 78% 60%)", edge: "hsl(24 76% 28%)" },
+    { fill: "hsl(174 40% 56%)", edge: "hsl(174 50% 24%)" },
+    { fill: "hsl(220 68% 60%)", edge: "hsl(220 72% 28%)" },
+    { fill: "hsl(274 48% 62%)", edge: "hsl(274 54% 28%)" },
+    { fill: "hsl(356 58% 65%)", edge: "hsl(356 62% 30%)" },
   ];
   const offset = normalizeSeed(seed) % swatches.length;
   const fills = [];

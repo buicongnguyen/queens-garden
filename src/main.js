@@ -33,6 +33,9 @@ const state = {
   analysis: null,
   cellElements: [],
   tokenElements: [],
+  warningElements: [],
+  gesture: null,
+  suppressClick: false,
   renderedPuzzleSeed: null,
   size: 7,
   activeTool: "queen",
@@ -66,6 +69,11 @@ boardElement.addEventListener("click", (event) => {
     return;
   }
 
+  if (state.suppressClick) {
+    state.suppressClick = false;
+    return;
+  }
+
   const row = Number(cell.dataset.row);
   const column = Number(cell.dataset.column);
 
@@ -78,6 +86,97 @@ boardElement.addEventListener("click", (event) => {
   applyTool(row, column, quickTool);
 });
 
+boardElement.addEventListener("pointerdown", (event) => {
+  const cell = event.target.closest(".cell");
+
+  if (!cell || !boardElement.contains(cell)) {
+    return;
+  }
+
+  if (!state.puzzle || state.loading || state.revealedBySystem) {
+    return;
+  }
+
+  const row = Number(cell.dataset.row);
+  const column = Number(cell.dataset.column);
+  const key = cellKey(row, column);
+
+  if (state.mobileTapMode && event.pointerType === "touch") {
+    boardElement.setPointerCapture(event.pointerId);
+    state.gesture = {
+      mode: "touch-mark",
+      pointerId: event.pointerId,
+      startKey: key,
+      lastKey: key,
+      moved: false,
+    };
+    return;
+  }
+
+  if (!state.mobileTapMode && event.pointerType === "mouse" && event.button === 2) {
+    event.preventDefault();
+    boardElement.setPointerCapture(event.pointerId);
+    state.gesture = {
+      mode: "right-mark",
+      pointerId: event.pointerId,
+      startKey: key,
+      lastKey: key,
+      moved: false,
+    };
+    markDraggedCell(row, column);
+  }
+});
+
+boardElement.addEventListener("pointermove", (event) => {
+  const gesture = state.gesture;
+
+  if (!gesture || gesture.pointerId !== event.pointerId) {
+    return;
+  }
+
+  const hoveredCell = document.elementFromPoint(
+    event.clientX,
+    event.clientY,
+  )?.closest(".cell");
+
+  if (!hoveredCell || !boardElement.contains(hoveredCell)) {
+    return;
+  }
+
+  const row = Number(hoveredCell.dataset.row);
+  const column = Number(hoveredCell.dataset.column);
+  const key = cellKey(row, column);
+
+  if (gesture.mode === "touch-mark") {
+    if (key !== gesture.startKey) {
+      gesture.moved = true;
+    }
+
+    if (!gesture.moved) {
+      return;
+    }
+
+    markCellByKey(gesture.startKey);
+    markDraggedCell(row, column);
+    gesture.lastKey = key;
+    return;
+  }
+
+  if (gesture.mode === "right-mark") {
+    if (key === gesture.lastKey) {
+      return;
+    }
+
+    gesture.moved = true;
+    markDraggedCell(row, column);
+    gesture.lastKey = key;
+  }
+});
+
+boardElement.addEventListener("pointerup", finishGesture);
+boardElement.addEventListener("pointercancel", finishGesture);
+boardElement.addEventListener("lostpointercapture", finishGesture);
+
 boardElement.addEventListener("contextmenu", (event) => {
   const cell = event.target.closest(".cell");
 
@@ -86,7 +185,6 @@ boardElement.addEventListener("contextmenu", (event) => {
   }
 
   event.preventDefault();
-  applyTool(Number(cell.dataset.row), Number(cell.dataset.column), "mark");
 });
 
 newGameButton.addEventListener("click", () => {
@@ -98,6 +196,8 @@ resetButton.addEventListener("click", () => {
     return;
   }
 
+  state.gesture = null;
+  state.suppressClick = false;
   state.board = createEmptyBoard(state.puzzle.size);
   state.analysis = analyzePlayerBoard(state.puzzle, state.board);
   state.hint = null;
@@ -126,6 +226,8 @@ revealButton.addEventListener("click", () => {
     return;
   }
 
+  state.gesture = null;
+  state.suppressClick = false;
   state.board = solutionBoard(state.puzzle);
   state.analysis = analyzePlayerBoard(state.puzzle, state.board);
   state.hint = null;
@@ -166,7 +268,9 @@ async function buildPuzzle(size) {
 
   state.loading = true;
   state.size = size;
+  state.gesture = null;
   state.hint = null;
+  state.suppressClick = false;
   state.revealedBySystem = false;
   boardElement.classList.add("is-loading");
   boardElement.style.setProperty("--size", String(size));
@@ -174,6 +278,7 @@ async function buildPuzzle(size) {
   state.renderedPuzzleSeed = null;
   state.cellElements = [];
   state.tokenElements = [];
+  state.warningElements = [];
   render();
 
   await nextFrame();
@@ -272,6 +377,15 @@ function renderStatus() {
     return;
   }
 
+  if (
+    state.analysis.rowViolations.size > 0 ||
+    state.analysis.columnViolations.size > 0
+  ) {
+    statusText.textContent =
+      "A row or column is impossible right now. Clear some marks or extra queens so every line can still hold exactly one queen.";
+    return;
+  }
+
   const remaining = state.puzzle.size - state.analysis.queenCount;
   const queenWord = remaining === 1 ? "queen" : "queens";
   statusText.textContent =
@@ -349,6 +463,9 @@ function ensureBoardStructure() {
   state.tokenElements = Array.from({ length: state.puzzle.size }, () =>
     Array(state.puzzle.size),
   );
+  state.warningElements = Array.from({ length: state.puzzle.size }, () =>
+    Array(state.puzzle.size),
+  );
 
   for (let row = 0; row < state.puzzle.size; row += 1) {
     for (let column = 0; column < state.puzzle.size; column += 1) {
@@ -364,6 +481,7 @@ function ensureBoardStructure() {
           : -1;
       const leftRegion = column > 0 ? state.puzzle.regions[row][column - 1] : -1;
       const cell = document.createElement("button");
+      const warning = document.createElement("span");
       const token = document.createElement("span");
 
       cell.type = "button";
@@ -374,19 +492,19 @@ function ensureBoardStructure() {
       cell.style.setProperty("--edge", state.puzzle.outlinePalette[region]);
       cell.style.setProperty(
         "--stroke-top",
-        row === 0 || topRegion !== region ? "3px" : "1.5px",
+        row === 0 || topRegion !== region ? "3px" : "0px",
       );
       cell.style.setProperty(
         "--stroke-right",
-        column === state.puzzle.size - 1 || rightRegion !== region ? "3px" : "1.5px",
+        column === state.puzzle.size - 1 || rightRegion !== region ? "3px" : "0px",
       );
       cell.style.setProperty(
         "--stroke-bottom",
-        row === state.puzzle.size - 1 || bottomRegion !== region ? "3px" : "1.5px",
+        row === state.puzzle.size - 1 || bottomRegion !== region ? "3px" : "0px",
       );
       cell.style.setProperty(
         "--stroke-left",
-        column === 0 || leftRegion !== region ? "3px" : "1.5px",
+        column === 0 || leftRegion !== region ? "3px" : "0px",
       );
       cell.style.setProperty("--delay", `${(row + column) * 18}ms`);
       cell.setAttribute(
@@ -394,11 +512,14 @@ function ensureBoardStructure() {
         `Row ${row + 1}, column ${column + 1}, region ${region + 1}`,
       );
 
+      warning.className = "warning-overlay";
       token.className = "token";
+      cell.append(warning);
       cell.append(token);
       fragment.append(cell);
 
       state.cellElements[row][column] = cell;
+      state.warningElements[row][column] = warning;
       state.tokenElements[row][column] = token;
     }
   }
@@ -409,9 +530,10 @@ function ensureBoardStructure() {
 
 function syncCell(row, column) {
   const cell = state.cellElements[row]?.[column];
+  const warning = state.warningElements[row]?.[column];
   const token = state.tokenElements[row]?.[column];
 
-  if (!cell || !token) {
+  if (!cell || !warning || !token) {
     return;
   }
 
@@ -421,6 +543,9 @@ function syncCell(row, column) {
     state.revealedBySystem && state.puzzle.queens[row] === column
       ? CELL_STATE.QUEEN
       : stateValue;
+  const hasLineViolation =
+    Boolean(state.analysis?.rowViolations.has(row)) ||
+    Boolean(state.analysis?.columnViolations.has(column));
 
   cell.disabled = state.loading || state.revealedBySystem;
   cell.classList.toggle("is-queen", displayValue === CELL_STATE.QUEEN);
@@ -439,6 +564,7 @@ function syncCell(row, column) {
     state.hint?.blocker?.row === row && state.hint?.blocker?.column === column,
   );
   cell.classList.toggle("is-hint-mark", state.hint?.type === "not-queen" && state.hint?.row === row && state.hint?.column === column);
+  warning.classList.toggle("is-visible", hasLineViolation);
 
   updateToken(token, displayValue);
 }
@@ -470,6 +596,20 @@ function applyMobileTap(row, column) {
   }
 
   commitBoardChange(row, column, nextValue);
+}
+
+function finishGesture(event) {
+  const gesture = state.gesture;
+
+  if (!gesture || gesture.pointerId !== event.pointerId) {
+    return;
+  }
+
+  if (gesture.mode === "touch-mark" && gesture.moved) {
+    state.suppressClick = true;
+  }
+
+  state.gesture = null;
 }
 
 function resolveToolValue(current, tool) {
@@ -510,6 +650,19 @@ function commitBoardChange(row, column, nextValue) {
       nextHint: state.hint,
     }),
   );
+}
+
+function markDraggedCell(row, column) {
+  if (state.board[row][column] !== CELL_STATE.EMPTY) {
+    return;
+  }
+
+  commitBoardChange(row, column, CELL_STATE.MARK);
+}
+
+function markCellByKey(key) {
+  const [rowText, columnText] = key.split(":");
+  markDraggedCell(Number(rowText), Number(columnText));
 }
 
 function nextFrame() {
@@ -568,6 +721,8 @@ function collectAffectedCellKeys({
 
   addConflictKeys(affected, previousAnalysis?.conflicts);
   addConflictKeys(affected, nextAnalysis?.conflicts);
+  addLineViolationKeys(affected, previousAnalysis);
+  addLineViolationKeys(affected, nextAnalysis);
   addHintKeys(affected, previousHint);
   addHintKeys(affected, nextHint);
 
@@ -599,6 +754,24 @@ function addHintKeys(affected, hint) {
     Number.isInteger(hint.blocker.column)
   ) {
     affected.add(cellKey(hint.blocker.row, hint.blocker.column));
+  }
+}
+
+function addLineViolationKeys(affected, analysis) {
+  if (!analysis || !state.puzzle) {
+    return;
+  }
+
+  for (const row of analysis.rowViolations ?? []) {
+    for (let column = 0; column < state.puzzle.size; column += 1) {
+      affected.add(cellKey(row, column));
+    }
+  }
+
+  for (const column of analysis.columnViolations ?? []) {
+    for (let row = 0; row < state.puzzle.size; row += 1) {
+      affected.add(cellKey(row, column));
+    }
   }
 }
 

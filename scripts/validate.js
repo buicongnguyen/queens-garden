@@ -4,7 +4,7 @@ import {
   validateSolutionColumns,
 } from "../src/engine.js";
 
-const sizes = [5, 6, 7, 8];
+const sizes = [7, 8, 9, 10, 11, 12, 13];
 
 for (const size of sizes) {
   for (let attempt = 0; attempt < 3; attempt += 1) {

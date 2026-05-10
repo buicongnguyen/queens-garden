@@ -24,7 +24,9 @@ Queen's Garden is a browser puzzle inspired by Queens / 1-star Star Battle:
 
 ## Notes
 
-- Boards are generated locally in the browser.
-- Each generated board is checked so it has exactly one solution.
+- Board sizes now run from `7x7` through `13x13`.
+- Boards are assembled locally in the browser from validated region layouts, with seed-driven symmetry flips to keep repeat plays fresh.
+- Each board is checked so it has exactly one solution.
+- Some preset region layouts were adapted from the MIT-licensed community levels in `samimsu/queens-game`.
 - The generated art lives in [assets](/C:/Users/n/OneDrive/Documents/New%20project%202/assets).
 - The site is GitHub Pages friendly because it uses relative asset paths and includes `.nojekyll`.
