@@ -1,7 +1,9 @@
 import {
   CELL_STATE,
+  LEVELS_PER_SIZE,
   SUPPORTED_SIZES,
   analyzePlayerBoard,
+  createFixedLevelSeed,
   createEmptyBoard,
   createPuzzle,
   findHint,
@@ -11,6 +13,8 @@ import {
 } from "./engine.js";
 
 const QUEEN_ICON_PATH = "./assets/queen-token-192.png";
+const CELL_GRID_LINE = "rgba(255, 255, 255, 0.42)";
+const SCORE_STORAGE_KEY = "queens-garden-scores-v1";
 
 const sizeSelect = document.querySelector("#size-select");
 const boardElement = document.querySelector("#board");
@@ -18,13 +22,35 @@ const newGameButton = document.querySelector("#new-game-button");
 const resetButton = document.querySelector("#reset-button");
 const hintButton = document.querySelector("#hint-button");
 const revealButton = document.querySelector("#reveal-button");
+const settingsButton = document.querySelector("#settings-button");
+const settingsLayer = document.querySelector("#settings-layer");
+const settingsBackdrop = document.querySelector("#settings-backdrop");
+const settingsCloseButton = document.querySelector("#settings-close-button");
 const statusText = document.querySelector("#status-text");
 const hintText = document.querySelector("#hint-text");
+const sessionLabel = document.querySelector("[data-session-label]");
+const timerLabel = document.querySelector("#timer-label");
 const queensStats = [...document.querySelectorAll("[data-queens-stat]")];
 const regionsStats = [...document.querySelectorAll("[data-regions-stat]")];
 const conflictsStats = [...document.querySelectorAll("[data-conflicts-stat]")];
 const seedLabels = [...document.querySelectorAll("[data-seed-label]")];
 const toolButtons = [...document.querySelectorAll("[data-tool]")];
+const levelSizeRow = document.querySelector("#level-size-row");
+const levelGrid = document.querySelector("#level-grid");
+const levelSelectionLabel = document.querySelector("#level-selection-label");
+const playSelectedRandomButton = document.querySelector(
+  "#play-selected-random-button",
+);
+const scoreSizeRow = document.querySelector("#score-size-row");
+const scoreLevelGrid = document.querySelector("#score-level-grid");
+const scoreFixedTotal = document.querySelector("#score-fixed-total");
+const scoreRandomTotal = document.querySelector("#score-random-total");
+const scoreSizeSummary = document.querySelector("#score-size-summary");
+const scoreRandomBest = document.querySelector("#score-random-best");
+const settingsTabButtons = [
+  ...document.querySelectorAll("[data-settings-tab-button]"),
+];
+const settingsPanels = [...document.querySelectorAll("[data-settings-panel]")];
 const mobileTapQuery = window.matchMedia("(max-width: 820px)");
 
 const state = {
@@ -38,11 +64,22 @@ const state = {
   suppressClick: false,
   renderedPuzzleSeed: null,
   size: 7,
+  mode: "random",
+  levelIndex: null,
+  levelPickerSize: 7,
+  scoreSize: 7,
   activeTool: "queen",
   hint: null,
   mobileTapMode: mobileTapQuery.matches,
   loading: false,
   revealedBySystem: false,
+  settingsOpen: false,
+  settingsTab: "game",
+  scoreData: loadScoreData(),
+  clockStartedAt: 0,
+  elapsedMs: 0,
+  timerId: null,
+  lastScoreSummary: null,
 };
 
 for (const size of SUPPORTED_SIZES) {
@@ -61,6 +98,67 @@ for (const button of toolButtons) {
     renderTools();
   });
 }
+
+for (const button of settingsTabButtons) {
+  button.addEventListener("click", () => {
+    state.settingsTab = button.dataset.settingsTabButton;
+    renderSettings();
+  });
+}
+
+settingsButton.addEventListener("click", () => {
+  setSettingsOpen(!state.settingsOpen);
+});
+
+settingsBackdrop.addEventListener("click", () => {
+  setSettingsOpen(false);
+});
+
+settingsCloseButton.addEventListener("click", () => {
+  setSettingsOpen(false);
+});
+
+levelSizeRow.addEventListener("click", (event) => {
+  const button = event.target.closest("[data-level-size]");
+
+  if (!button) {
+    return;
+  }
+
+  state.levelPickerSize = Number(button.dataset.levelSize);
+  renderLevelPicker();
+});
+
+levelGrid.addEventListener("click", (event) => {
+  const button = event.target.closest("[data-level-index]");
+
+  if (!button) {
+    return;
+  }
+
+  const size = Number(button.dataset.levelSize);
+  const levelIndex = Number(button.dataset.levelIndex);
+  state.levelPickerSize = size;
+  state.scoreSize = size;
+  maybeCloseSettingsOnMobile();
+  void buildPuzzle(size, { mode: "fixed", levelIndex });
+});
+
+playSelectedRandomButton.addEventListener("click", () => {
+  maybeCloseSettingsOnMobile();
+  void buildPuzzle(state.levelPickerSize, { mode: "random" });
+});
+
+scoreSizeRow.addEventListener("click", (event) => {
+  const button = event.target.closest("[data-score-size]");
+
+  if (!button) {
+    return;
+  }
+
+  state.scoreSize = Number(button.dataset.scoreSize);
+  renderScores();
+});
 
 boardElement.addEventListener("click", (event) => {
   const cell = event.target.closest(".cell");
@@ -101,18 +199,6 @@ boardElement.addEventListener("pointerdown", (event) => {
   const column = Number(cell.dataset.column);
   const key = cellKey(row, column);
 
-  if (state.mobileTapMode && event.pointerType === "touch") {
-    boardElement.setPointerCapture(event.pointerId);
-    state.gesture = {
-      mode: "touch-mark",
-      pointerId: event.pointerId,
-      startKey: key,
-      lastKey: key,
-      moved: false,
-    };
-    return;
-  }
-
   if (!state.mobileTapMode && event.pointerType === "mouse" && event.button === 2) {
     event.preventDefault();
     boardElement.setPointerCapture(event.pointerId);
@@ -126,6 +212,31 @@ boardElement.addEventListener("pointerdown", (event) => {
     markDraggedCell(row, column);
   }
 });
+
+boardElement.addEventListener(
+  "touchstart",
+  (event) => {
+    if (!state.mobileTapMode || !state.puzzle || state.loading || state.revealedBySystem) {
+      return;
+    }
+
+    const touch = event.touches[0];
+    const cell = event.target.closest(".cell");
+
+    if (!touch || !cell || !boardElement.contains(cell)) {
+      return;
+    }
+
+    state.gesture = {
+      mode: "touch-mark",
+      pointerId: touch.identifier,
+      startKey: cellKey(Number(cell.dataset.row), Number(cell.dataset.column)),
+      lastKey: cellKey(Number(cell.dataset.row), Number(cell.dataset.column)),
+      moved: false,
+    };
+  },
+  { passive: true },
+);
 
 boardElement.addEventListener("pointermove", (event) => {
   const gesture = state.gesture;
@@ -147,7 +258,51 @@ boardElement.addEventListener("pointermove", (event) => {
   const column = Number(hoveredCell.dataset.column);
   const key = cellKey(row, column);
 
-  if (gesture.mode === "touch-mark") {
+  if (gesture.mode === "right-mark") {
+    if (key === gesture.lastKey) {
+      return;
+    }
+
+    gesture.moved = true;
+    markCellsAlongPath(gesture.lastKey, key);
+    gesture.lastKey = key;
+  }
+});
+
+boardElement.addEventListener(
+  "touchmove",
+  (event) => {
+    const gesture = state.gesture;
+
+    if (!gesture || gesture.mode !== "touch-mark" || !state.mobileTapMode) {
+      return;
+    }
+
+    const touch = [...event.changedTouches].find(
+      (candidate) => candidate.identifier === gesture.pointerId,
+    );
+
+    if (!touch) {
+      return;
+    }
+
+    const hoveredCell = document.elementFromPoint(
+      touch.clientX,
+      touch.clientY,
+    )?.closest(".cell");
+
+    if (!hoveredCell || !boardElement.contains(hoveredCell)) {
+      return;
+    }
+
+    const row = Number(hoveredCell.dataset.row);
+    const column = Number(hoveredCell.dataset.column);
+    const key = cellKey(row, column);
+
+    if (key === gesture.lastKey && gesture.moved) {
+      return;
+    }
+
     if (key !== gesture.startKey) {
       gesture.moved = true;
     }
@@ -156,26 +311,20 @@ boardElement.addEventListener("pointermove", (event) => {
       return;
     }
 
-    markCellByKey(gesture.startKey);
-    markDraggedCell(row, column);
-    gesture.lastKey = key;
-    return;
-  }
+    event.preventDefault();
 
-  if (gesture.mode === "right-mark") {
-    if (key === gesture.lastKey) {
-      return;
-    }
-
-    gesture.moved = true;
-    markDraggedCell(row, column);
+    const fromKey = gesture.lastKey ?? gesture.startKey;
+    markCellsAlongPath(fromKey, key);
     gesture.lastKey = key;
-  }
-});
+  },
+  { passive: false },
+);
 
 boardElement.addEventListener("pointerup", finishGesture);
 boardElement.addEventListener("pointercancel", finishGesture);
 boardElement.addEventListener("lostpointercapture", finishGesture);
+boardElement.addEventListener("touchend", finishTouchGesture, { passive: true });
+boardElement.addEventListener("touchcancel", finishTouchGesture, { passive: true });
 
 boardElement.addEventListener("contextmenu", (event) => {
   const cell = event.target.closest(".cell");
@@ -188,7 +337,8 @@ boardElement.addEventListener("contextmenu", (event) => {
 });
 
 newGameButton.addEventListener("click", () => {
-  void buildPuzzle(state.size);
+  maybeCloseSettingsOnMobile();
+  void buildPuzzle(state.size, { mode: "random" });
 });
 
 resetButton.addEventListener("click", () => {
@@ -202,17 +352,22 @@ resetButton.addEventListener("click", () => {
   state.analysis = analyzePlayerBoard(state.puzzle, state.board);
   state.hint = null;
   state.revealedBySystem = false;
+  state.lastScoreSummary = null;
+  restartTimer();
   render();
+  maybeCloseSettingsOnMobile();
 });
 
 hintButton.addEventListener("click", () => {
-  if (!state.puzzle || state.loading) {
+  if (!state.puzzle || state.loading || state.revealedBySystem) {
     return;
   }
 
   const previousHint = state.hint;
-  state.hint = findHint(state.puzzle, state.board);
+  state.hint = findHint(state.puzzle, state.board, state.analysis);
+  state.settingsTab = "status";
   renderHint();
+  renderSettings();
   renderBoard(
     collectAffectedCellKeys({
       previousHint,
@@ -232,15 +387,26 @@ revealButton.addEventListener("click", () => {
   state.analysis = analyzePlayerBoard(state.puzzle, state.board);
   state.hint = null;
   state.revealedBySystem = true;
+  state.lastScoreSummary = null;
+  stopTimer();
   render();
+  maybeCloseSettingsOnMobile();
 });
 
 sizeSelect.addEventListener("change", () => {
   state.size = Number(sizeSelect.value);
-  void buildPuzzle(state.size);
+  state.levelPickerSize = state.size;
+  state.scoreSize = state.size;
+  maybeCloseSettingsOnMobile();
+  void buildPuzzle(state.size, { mode: "random" });
 });
 
 document.addEventListener("keydown", (event) => {
+  if (event.key === "Escape" && state.settingsOpen) {
+    setSettingsOpen(false);
+    return;
+  }
+
   const key = event.key.toLowerCase();
 
   if (key === "q") {
@@ -259,19 +425,49 @@ mobileTapQuery.addEventListener("change", (event) => {
   state.mobileTapMode = event.matches;
 });
 
-void buildPuzzle(state.size);
+void buildPuzzle(state.size, { mode: "random" });
 
-async function buildPuzzle(size) {
+function setSettingsOpen(nextOpen) {
+  state.settingsOpen = nextOpen;
+  renderSettings();
+}
+
+function maybeCloseSettingsOnMobile() {
+  if (mobileTapQuery.matches) {
+    setSettingsOpen(false);
+  }
+}
+
+async function buildPuzzle(size, options = {}) {
   if (state.loading) {
     return;
   }
 
+  const mode = options.mode === "fixed" ? "fixed" : "random";
+  const levelIndex =
+    mode === "fixed"
+      ? clampLevelIndex(options.levelIndex ?? state.levelIndex ?? 1)
+      : null;
+  const seed =
+    mode === "fixed"
+      ? createFixedLevelSeed(size, levelIndex)
+      : options.seed ?? randomSeed();
+
   state.loading = true;
   state.size = size;
+  state.mode = mode;
+  state.levelIndex = levelIndex;
+  state.levelPickerSize = size;
+  state.scoreSize = size;
   state.gesture = null;
   state.hint = null;
   state.suppressClick = false;
   state.revealedBySystem = false;
+  state.lastScoreSummary = null;
+  state.puzzle = null;
+  state.board = [];
+  state.analysis = null;
+  stopTimer();
   boardElement.classList.add("is-loading");
   boardElement.style.setProperty("--size", String(size));
   boardElement.replaceChildren();
@@ -284,11 +480,12 @@ async function buildPuzzle(size) {
   await nextFrame();
 
   try {
-    const seed = randomSeed();
     state.puzzle = createPuzzle(size, seed);
     state.board = createEmptyBoard(size);
     state.analysis = analyzePlayerBoard(state.puzzle, state.board);
+    restartTimer();
   } catch (error) {
+    stopTimer();
     statusText.textContent =
       error instanceof Error ? error.message : "Unable to create puzzle.";
   } finally {
@@ -300,14 +497,19 @@ async function buildPuzzle(size) {
 
 function render() {
   renderTools();
+  renderSessionMeta();
   renderStats();
   renderStatus();
   renderHint();
+  renderLevelPicker();
+  renderScores();
+  renderSettings();
 
   if (!state.loading) {
     renderBoard();
   }
 
+  sizeSelect.value = String(state.size);
   sizeSelect.disabled = state.loading;
   newGameButton.disabled = state.loading;
   resetButton.disabled = state.loading || !state.puzzle;
@@ -321,6 +523,27 @@ function renderTools() {
     button.classList.toggle("is-active", isActive);
     button.setAttribute("aria-pressed", String(isActive));
     button.disabled = state.loading || state.revealedBySystem;
+  }
+}
+
+function renderSessionMeta() {
+  sessionLabel.textContent = getSessionLabel();
+  timerLabel.textContent = formatDuration(state.elapsedMs);
+}
+
+function renderSettings() {
+  settingsButton.setAttribute("aria-expanded", String(state.settingsOpen));
+  settingsLayer.hidden = !state.settingsOpen;
+  document.body.classList.toggle("has-settings-open", state.settingsOpen);
+
+  for (const button of settingsTabButtons) {
+    const isActive = button.dataset.settingsTabButton === state.settingsTab;
+    button.classList.toggle("is-active", isActive);
+    button.setAttribute("aria-selected", String(isActive));
+  }
+
+  for (const panel of settingsPanels) {
+    panel.hidden = panel.dataset.settingsPanel !== state.settingsTab;
   }
 }
 
@@ -363,8 +586,9 @@ function renderStatus() {
   }
 
   if (state.analysis.solved) {
-    statusText.textContent =
-      "Solved. Every row, column, and colored region now holds exactly one queen.";
+    const solvedText = `Solved in ${formatDuration(state.elapsedMs)}.`;
+    const scoreText = describeScoreSummary(state.lastScoreSummary);
+    statusText.textContent = scoreText ? `${solvedText} ${scoreText}` : solvedText;
     return;
   }
 
@@ -418,6 +642,102 @@ function renderHint() {
   }
 
   hintText.textContent = state.hint.message;
+}
+
+function renderLevelPicker() {
+  renderSizeChipRow(levelSizeRow, "level-size", state.levelPickerSize);
+
+  const solvedCount = getFixedSolvedCountForSize(state.levelPickerSize);
+  const sizeLabel = `${state.levelPickerSize} x ${state.levelPickerSize}`;
+  const currentLevelText =
+    state.mode === "fixed" && state.size === state.levelPickerSize && state.levelIndex
+      ? `Current level ${padLevel(state.levelIndex)}`
+      : "Pick a fixed level to start.";
+  levelSelectionLabel.textContent =
+    `${sizeLabel} · ${solvedCount} / ${LEVELS_PER_SIZE} cleared · ${currentLevelText}`;
+
+  playSelectedRandomButton.textContent = `Play random ${sizeLabel}`;
+  playSelectedRandomButton.classList.toggle(
+    "primary",
+    state.mode === "random" && state.size === state.levelPickerSize,
+  );
+
+  const fragment = document.createDocumentFragment();
+
+  for (let levelIndex = 1; levelIndex <= LEVELS_PER_SIZE; levelIndex += 1) {
+    const bestMs = getFixedBestTime(state.levelPickerSize, levelIndex);
+    const button = document.createElement("button");
+    const label = document.createElement("span");
+    const meta = document.createElement("span");
+    const isCurrent =
+      state.mode === "fixed" &&
+      state.size === state.levelPickerSize &&
+      state.levelIndex === levelIndex;
+
+    button.type = "button";
+    button.className = "level-button";
+    button.dataset.levelSize = String(state.levelPickerSize);
+    button.dataset.levelIndex = String(levelIndex);
+    button.classList.toggle("is-current", isCurrent);
+    button.classList.toggle("is-cleared", bestMs !== null);
+    button.setAttribute(
+      "aria-label",
+      `Level ${levelIndex} for ${sizeLabel}${bestMs === null ? "" : `, best time ${formatDuration(bestMs)}`}`,
+    );
+
+    label.className = "level-button-label";
+    label.textContent = `L${padLevel(levelIndex)}`;
+
+    meta.className = "level-button-meta";
+    meta.textContent = bestMs === null ? "Uncleared" : formatDuration(bestMs);
+
+    button.append(label, meta);
+    fragment.append(button);
+  }
+
+  levelGrid.replaceChildren(fragment);
+}
+
+function renderScores() {
+  renderSizeChipRow(scoreSizeRow, "score-size", state.scoreSize);
+
+  const fixedSolvedTotal = getFixedSolvedTotal();
+  const fixedPossibleTotal = SUPPORTED_SIZES.length * LEVELS_PER_SIZE;
+  const randomSolvedTotal = Object.keys(state.scoreData.random).length;
+
+  scoreFixedTotal.textContent = `${fixedSolvedTotal} / ${fixedPossibleTotal}`;
+  scoreRandomTotal.textContent = String(randomSolvedTotal);
+  scoreSizeSummary.textContent =
+    `${state.scoreSize} x ${state.scoreSize} · ${getFixedSolvedCountForSize(state.scoreSize)} / ${LEVELS_PER_SIZE}`;
+  scoreRandomBest.textContent = formatBestTime(getRandomBestTime(state.scoreSize));
+
+  const fragment = document.createDocumentFragment();
+
+  for (let levelIndex = 1; levelIndex <= LEVELS_PER_SIZE; levelIndex += 1) {
+    const bestMs = getFixedBestTime(state.scoreSize, levelIndex);
+    const card = document.createElement("article");
+    const label = document.createElement("p");
+    const value = document.createElement("p");
+    const isCurrent =
+      state.mode === "fixed" &&
+      state.size === state.scoreSize &&
+      state.levelIndex === levelIndex;
+
+    card.className = "score-level-card";
+    card.classList.toggle("is-cleared", bestMs !== null);
+    card.classList.toggle("is-current", isCurrent);
+
+    label.className = "score-level-label";
+    label.textContent = `Level ${padLevel(levelIndex)}`;
+
+    value.className = "score-level-value";
+    value.textContent = bestMs === null ? "--" : formatDuration(bestMs);
+
+    card.append(label, value);
+    fragment.append(card);
+  }
+
+  scoreLevelGrid.replaceChildren(fragment);
 }
 
 function renderBoard(cellKeys = null) {
@@ -480,6 +800,12 @@ function ensureBoardStructure() {
           ? state.puzzle.regions[row + 1][column]
           : -1;
       const leftRegion = column > 0 ? state.puzzle.regions[row][column - 1] : -1;
+      const hasTopBoundary = row === 0 || topRegion !== region;
+      const hasRightBoundary =
+        column === state.puzzle.size - 1 || rightRegion !== region;
+      const hasBottomBoundary =
+        row === state.puzzle.size - 1 || bottomRegion !== region;
+      const hasLeftBoundary = column === 0 || leftRegion !== region;
       const cell = document.createElement("button");
       const warning = document.createElement("span");
       const token = document.createElement("span");
@@ -490,21 +816,28 @@ function ensureBoardStructure() {
       cell.dataset.column = String(column);
       cell.style.setProperty("--tone", state.puzzle.palette[region]);
       cell.style.setProperty("--edge", state.puzzle.outlinePalette[region]);
+      cell.style.setProperty("--stroke-top", hasTopBoundary ? "3px" : "1px");
       cell.style.setProperty(
-        "--stroke-top",
-        row === 0 || topRegion !== region ? "3px" : "0px",
+        "--stroke-top-color",
+        hasTopBoundary ? state.puzzle.outlinePalette[region] : CELL_GRID_LINE,
       );
+      cell.style.setProperty("--stroke-right", hasRightBoundary ? "3px" : "1px");
       cell.style.setProperty(
-        "--stroke-right",
-        column === state.puzzle.size - 1 || rightRegion !== region ? "3px" : "0px",
+        "--stroke-right-color",
+        hasRightBoundary ? state.puzzle.outlinePalette[region] : CELL_GRID_LINE,
       );
       cell.style.setProperty(
         "--stroke-bottom",
-        row === state.puzzle.size - 1 || bottomRegion !== region ? "3px" : "0px",
+        hasBottomBoundary ? "3px" : "1px",
       );
       cell.style.setProperty(
-        "--stroke-left",
-        column === 0 || leftRegion !== region ? "3px" : "0px",
+        "--stroke-bottom-color",
+        hasBottomBoundary ? state.puzzle.outlinePalette[region] : CELL_GRID_LINE,
+      );
+      cell.style.setProperty("--stroke-left", hasLeftBoundary ? "3px" : "1px");
+      cell.style.setProperty(
+        "--stroke-left-color",
+        hasLeftBoundary ? state.puzzle.outlinePalette[region] : CELL_GRID_LINE,
       );
       cell.style.setProperty("--delay", `${(row + column) * 18}ms`);
       cell.setAttribute(
@@ -538,7 +871,7 @@ function syncCell(row, column) {
   }
 
   const stateValue = state.board[row][column];
-  const conflictKey = `${row}:${column}`;
+  const conflictKey = cellKey(row, column);
   const displayValue =
     state.revealedBySystem && state.puzzle.queens[row] === column
       ? CELL_STATE.QUEEN
@@ -563,7 +896,12 @@ function syncCell(row, column) {
     "is-hint-source",
     state.hint?.blocker?.row === row && state.hint?.blocker?.column === column,
   );
-  cell.classList.toggle("is-hint-mark", state.hint?.type === "not-queen" && state.hint?.row === row && state.hint?.column === column);
+  cell.classList.toggle(
+    "is-hint-mark",
+    state.hint?.type === "not-queen" &&
+      state.hint?.row === row &&
+      state.hint?.column === column,
+  );
   warning.classList.toggle("is-visible", hasLineViolation);
 
   updateToken(token, displayValue);
@@ -612,6 +950,28 @@ function finishGesture(event) {
   state.gesture = null;
 }
 
+function finishTouchGesture(event) {
+  const gesture = state.gesture;
+
+  if (!gesture || gesture.mode !== "touch-mark") {
+    return;
+  }
+
+  const touch = [...event.changedTouches].find(
+    (candidate) => candidate.identifier === gesture.pointerId,
+  );
+
+  if (!touch) {
+    return;
+  }
+
+  if (gesture.moved) {
+    state.suppressClick = true;
+  }
+
+  state.gesture = null;
+}
+
 function resolveToolValue(current, tool) {
   if (tool === "queen") {
     return current === CELL_STATE.QUEEN ? CELL_STATE.EMPTY : CELL_STATE.QUEEN;
@@ -637,10 +997,23 @@ function commitBoardChange(row, column, nextValue) {
   state.board[row][column] = nextValue;
   state.analysis = analyzePlayerBoard(state.puzzle, state.board);
   state.hint = null;
+  state.lastScoreSummary = null;
 
+  if (!previousAnalysis?.solved && state.analysis.solved) {
+    stopTimer();
+    state.lastScoreSummary = recordBestTime();
+  }
+
+  renderSessionMeta();
   renderStats();
   renderStatus();
   renderHint();
+
+  if (state.lastScoreSummary) {
+    renderLevelPicker();
+    renderScores();
+  }
+
   renderBoard(
     collectAffectedCellKeys({
       cells: [[row, column]],
@@ -660,14 +1033,292 @@ function markDraggedCell(row, column) {
   commitBoardChange(row, column, CELL_STATE.MARK);
 }
 
-function markCellByKey(key) {
-  const [rowText, columnText] = key.split(":");
-  markDraggedCell(Number(rowText), Number(columnText));
+function markCellsAlongPath(fromKey, toKey) {
+  const [fromRowText, fromColumnText] = fromKey.split(":");
+  const [toRowText, toColumnText] = toKey.split(":");
+  const fromRow = Number(fromRowText);
+  const fromColumn = Number(fromColumnText);
+  const toRow = Number(toRowText);
+  const toColumn = Number(toColumnText);
+  const rowDistance = toRow - fromRow;
+  const columnDistance = toColumn - fromColumn;
+  const steps = Math.max(Math.abs(rowDistance), Math.abs(columnDistance), 1);
+
+  for (let step = 0; step <= steps; step += 1) {
+    const row = Math.round(fromRow + (rowDistance * step) / steps);
+    const column = Math.round(fromColumn + (columnDistance * step) / steps);
+    markDraggedCell(row, column);
+  }
+}
+
+function renderSizeChipRow(container, dataName, activeSize) {
+  const fragment = document.createDocumentFragment();
+
+  for (const size of SUPPORTED_SIZES) {
+    const button = document.createElement("button");
+    button.type = "button";
+    button.className = "size-chip";
+    button.setAttribute(`data-${dataName}`, String(size));
+    button.classList.toggle("is-active", size === activeSize);
+    button.setAttribute("aria-pressed", String(size === activeSize));
+    button.textContent = `${size} x ${size}`;
+    fragment.append(button);
+  }
+
+  container.replaceChildren(fragment);
+}
+
+function recordBestTime() {
+  const elapsedMs = Math.max(0, Math.round(state.elapsedMs));
+
+  if (state.mode === "fixed" && state.levelIndex) {
+    const previousBest = getFixedBestTime(state.size, state.levelIndex);
+    const didImprove = previousBest === null || elapsedMs < previousBest;
+
+    if (didImprove) {
+      const sizeKey = String(state.size);
+      const levelKey = String(state.levelIndex);
+
+      if (!state.scoreData.fixed[sizeKey]) {
+        state.scoreData.fixed[sizeKey] = {};
+      }
+
+      state.scoreData.fixed[sizeKey][levelKey] = elapsedMs;
+      persistScoreData();
+    }
+
+    return {
+      mode: "fixed",
+      size: state.size,
+      levelIndex: state.levelIndex,
+      elapsedMs,
+      previousBest,
+      didImprove,
+    };
+  }
+
+  const previousBest = getRandomBestTime(state.size);
+  const didImprove = previousBest === null || elapsedMs < previousBest;
+
+  if (didImprove) {
+    state.scoreData.random[String(state.size)] = elapsedMs;
+    persistScoreData();
+  }
+
+  return {
+    mode: "random",
+    size: state.size,
+    levelIndex: null,
+    elapsedMs,
+    previousBest,
+    didImprove,
+  };
+}
+
+function describeScoreSummary(summary) {
+  if (!summary) {
+    return "";
+  }
+
+  if (summary.mode === "fixed") {
+    if (summary.previousBest === null) {
+      return "First clear for this fixed level.";
+    }
+
+    if (summary.didImprove) {
+      return "New best time for this fixed level.";
+    }
+
+    return `Best time stays ${formatDuration(summary.previousBest)}.`;
+  }
+
+  if (summary.previousBest === null) {
+    return `First saved random record for ${summary.size} x ${summary.size}.`;
+  }
+
+  if (summary.didImprove) {
+    return `New best random time for ${summary.size} x ${summary.size}.`;
+  }
+
+  return `Best random time stays ${formatDuration(summary.previousBest)}.`;
+}
+
+function getSessionLabel() {
+  const sizeLabel = `${state.size} x ${state.size}`;
+
+  if (state.loading && state.mode === "fixed" && state.levelIndex) {
+    return `Loading level ${padLevel(state.levelIndex)} / ${LEVELS_PER_SIZE} · ${sizeLabel}`;
+  }
+
+  if (state.loading) {
+    return `Building random puzzle · ${sizeLabel}`;
+  }
+
+  if (state.mode === "fixed" && state.levelIndex) {
+    return `Level ${padLevel(state.levelIndex)} / ${LEVELS_PER_SIZE} · ${sizeLabel}`;
+  }
+
+  return `Random puzzle · ${sizeLabel}`;
+}
+
+function clampLevelIndex(levelIndex) {
+  const safeIndex = Number(levelIndex);
+  return Math.min(
+    LEVELS_PER_SIZE,
+    Math.max(1, Number.isInteger(safeIndex) ? safeIndex : 1),
+  );
+}
+
+function restartTimer() {
+  stopTimer();
+  state.elapsedMs = 0;
+  state.clockStartedAt = performance.now();
+  renderSessionMeta();
+  state.timerId = window.setInterval(() => {
+    state.elapsedMs = performance.now() - state.clockStartedAt;
+    renderSessionMeta();
+  }, 250);
+}
+
+function stopTimer() {
+  if (state.timerId !== null) {
+    window.clearInterval(state.timerId);
+    state.timerId = null;
+  }
+
+  if (state.clockStartedAt) {
+    state.elapsedMs = performance.now() - state.clockStartedAt;
+  }
+
+  state.clockStartedAt = 0;
+  renderSessionMeta();
+}
+
+function getFixedBestTime(size, levelIndex) {
+  return state.scoreData.fixed[String(size)]?.[String(levelIndex)] ?? null;
+}
+
+function getRandomBestTime(size) {
+  return state.scoreData.random[String(size)] ?? null;
+}
+
+function getFixedSolvedCountForSize(size) {
+  return Object.keys(state.scoreData.fixed[String(size)] ?? {}).length;
+}
+
+function getFixedSolvedTotal() {
+  return SUPPORTED_SIZES.reduce(
+    (total, size) => total + getFixedSolvedCountForSize(size),
+    0,
+  );
+}
+
+function loadScoreData() {
+  try {
+    const raw = window.localStorage.getItem(SCORE_STORAGE_KEY);
+
+    if (!raw) {
+      return createEmptyScoreData();
+    }
+
+    return normalizeScoreData(JSON.parse(raw));
+  } catch {
+    return createEmptyScoreData();
+  }
+}
+
+function createEmptyScoreData() {
+  return {
+    fixed: {},
+    random: {},
+  };
+}
+
+function normalizeScoreData(candidate) {
+  const normalized = createEmptyScoreData();
+
+  if (!candidate || typeof candidate !== "object") {
+    return normalized;
+  }
+
+  if (candidate.fixed && typeof candidate.fixed === "object") {
+    for (const [sizeKey, levels] of Object.entries(candidate.fixed)) {
+      if (!levels || typeof levels !== "object") {
+        continue;
+      }
+
+      const nextLevels = {};
+
+      for (const [levelKey, value] of Object.entries(levels)) {
+        const safeValue = normalizeBestMs(value);
+
+        if (safeValue !== null) {
+          nextLevels[levelKey] = safeValue;
+        }
+      }
+
+      if (Object.keys(nextLevels).length > 0) {
+        normalized.fixed[sizeKey] = nextLevels;
+      }
+    }
+  }
+
+  if (candidate.random && typeof candidate.random === "object") {
+    for (const [sizeKey, value] of Object.entries(candidate.random)) {
+      const safeValue = normalizeBestMs(value);
+
+      if (safeValue !== null) {
+        normalized.random[sizeKey] = safeValue;
+      }
+    }
+  }
+
+  return normalized;
+}
+
+function normalizeBestMs(value) {
+  if (!Number.isFinite(value) || value < 0) {
+    return null;
+  }
+
+  return Math.round(value);
+}
+
+function persistScoreData() {
+  try {
+    window.localStorage.setItem(
+      SCORE_STORAGE_KEY,
+      JSON.stringify(state.scoreData),
+    );
+  } catch {
+    // Ignore storage failures so the puzzle still works in private browsing.
+  }
+}
+
+function formatBestTime(value) {
+  return value === null ? "--" : formatDuration(value);
+}
+
+function formatDuration(value) {
+  const totalSeconds = Math.max(0, Math.floor(value / 1000));
+  const hours = Math.floor(totalSeconds / 3600);
+  const minutes = Math.floor((totalSeconds % 3600) / 60);
+  const seconds = totalSeconds % 60;
+
+  if (hours > 0) {
+    return `${hours}:${String(minutes).padStart(2, "0")}:${String(seconds).padStart(2, "0")}`;
+  }
+
+  return `${String(minutes).padStart(2, "0")}:${String(seconds).padStart(2, "0")}`;
+}
+
+function padLevel(levelIndex) {
+  return String(levelIndex).padStart(2, "0");
 }
 
 function nextFrame() {
   return new Promise((resolve) => {
-    requestAnimationFrame(() => resolve());
+    window.setTimeout(resolve, 0);
   });
 }
 

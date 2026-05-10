@@ -4,7 +4,8 @@ export const CELL_STATE = Object.freeze({
   MARK: 2,
 });
 
-export const SUPPORTED_SIZES = Object.freeze([7, 8, 9, 10, 11, 12, 13]);
+export const SUPPORTED_SIZES = Object.freeze([7, 8, 9, 10, 11, 12, 13, 14, 15]);
+export const LEVELS_PER_SIZE = 40;
 
 const ORTHOGONAL_STEPS = Object.freeze([
   [1, 0],
@@ -12,6 +13,13 @@ const ORTHOGONAL_STEPS = Object.freeze([
   [0, 1],
   [0, -1],
 ]);
+const DIAGONAL_STEPS = Object.freeze([
+  [-1, -1],
+  [-1, 1],
+  [1, -1],
+  [1, 1],
+]);
+const PUZZLE_CACHE = new WeakMap();
 
 const SOLUTION_SEARCH_LIMIT = 65;
 const LOCAL_SEARCH_MOVE_LIMIT = 30;
@@ -23,6 +31,8 @@ const SEARCH_BUDGETS = Object.freeze({
   11: { seedVariations: 12, generationAttempts: 26, regionAttempts: 22, localSearchIterations: 8200 },
   12: { seedVariations: 14, generationAttempts: 30, regionAttempts: 24, localSearchIterations: 10000 },
   13: { seedVariations: 16, generationAttempts: 34, regionAttempts: 26, localSearchIterations: 12000 },
+  14: { seedVariations: 18, generationAttempts: 38, regionAttempts: 28, localSearchIterations: 13800 },
+  15: { seedVariations: 20, generationAttempts: 42, regionAttempts: 30, localSearchIterations: 15600 },
 });
 
 // Preset layouts keep the larger boards instant to load while still allowing
@@ -126,6 +136,43 @@ const PRESET_LAYOUTS = Object.freeze({
       "MMMMJJFFFKAAA",
     ]),
   ]),
+  14: Object.freeze([
+    Object.freeze([
+      "ABBBBCCCCCCCDD",
+      "AABEEECCCCCDDD",
+      "AABEEEECFCCDDD",
+      "AAAAGEEEFCCCDD",
+      "AAAGGEEEEECCDD",
+      "AAAGGGGEGEECDD",
+      "AAAGGGGGGEEEDD",
+      "AAAGGGGGGGHHDD",
+      "AAAIGIIIGJJJJD",
+      "AAAIIIIIGJJJKK",
+      "AAAILLIIIMJJKK",
+      "AALLLLIIIMJJJK",
+      "AALLLLLNNNJJJJ",
+      "AAALLLLLNNNNNJ",
+    ]),
+  ]),
+  15: Object.freeze([
+    Object.freeze([
+      "AAAABBCCCCCCDDD",
+      "AAABBBCCCCCDDDD",
+      "AAABBBBCCECDDDD",
+      "AAFBBBBCCEEEDDD",
+      "AAFBBBBBCEEDDDD",
+      "AFFBBFFBBBEEDDD",
+      "AFFFFFFBBEEEDGD",
+      "FFFFHHHBBEEGDGG",
+      "FHHHHHHIEEEGGGG",
+      "FJHHHHIIIIIGGKK",
+      "JJJHIIIIIIGGKKK",
+      "JJJLLLLIIIGKKKK",
+      "MMJLLLIIIIGKKKK",
+      "MMNNLOOOOIGKKKK",
+      "MMMNNOOOOIIIKKK",
+    ]),
+  ]),
 });
 
 export function randomSeed() {
@@ -140,6 +187,18 @@ export function randomSeed() {
 
 export function formatSeed(seed) {
   return normalizeSeed(seed).toString(36).toUpperCase();
+}
+
+export function createFixedLevelSeed(size, levelIndex) {
+  if (!SUPPORTED_SIZES.includes(size)) {
+    throw new Error(`Unsupported board size: ${size}`);
+  }
+
+  if (!Number.isInteger(levelIndex) || levelIndex < 1 || levelIndex > LEVELS_PER_SIZE) {
+    throw new Error(`Unsupported level index: ${levelIndex}`);
+  }
+
+  return size * 1000 + (levelIndex - 1) * 17;
 }
 
 export function createEmptyBoard(size) {
@@ -191,6 +250,7 @@ export function createPuzzle(size, seed = randomSeed()) {
           regions,
           palette: palette.fills,
           outlinePalette: palette.edges,
+          solutionCount: null,
         };
 
         const optimized = optimizeRegions(
@@ -203,6 +263,7 @@ export function createPuzzle(size, seed = randomSeed()) {
 
         if (optimized.solutionCount === 1) {
           puzzle.regions = optimized.regions;
+          puzzle.solutionCount = 1;
           return puzzle;
         }
       }
@@ -213,6 +274,10 @@ export function createPuzzle(size, seed = randomSeed()) {
 }
 
 export function countSolutions(puzzle, limit = 2) {
+  if (Number.isInteger(puzzle.solutionCount)) {
+    return Math.min(puzzle.solutionCount, limit);
+  }
+
   return countRegionSolutions(puzzle.size, puzzle.regions, limit);
 }
 
@@ -349,103 +414,126 @@ export function validateSolutionColumns(puzzle, columns) {
 }
 
 export function analyzePlayerBoard(puzzle, board) {
-  const rowCounts = Array(puzzle.size).fill(0);
-  const columnCounts = Array(puzzle.size).fill(0);
-  const regionCounts = Array(puzzle.size).fill(0);
-  const rowMarks = Array(puzzle.size).fill(0);
-  const columnMarks = Array(puzzle.size).fill(0);
-  const queens = [];
-  const queenKeys = new Set();
+  const size = puzzle.size;
+  const puzzleCache = getPuzzleCache(puzzle);
+  const rowCounts = new Uint8Array(size);
+  const columnCounts = new Uint8Array(size);
+  const regionCounts = new Uint8Array(size);
+  const rowMarks = new Uint8Array(size);
+  const columnMarks = new Uint8Array(size);
+  const queenIndexes = [];
+  const queenIndexSet = new Set();
+  let queenCount = 0;
+  let completedRegions = 0;
 
-  for (let row = 0; row < puzzle.size; row += 1) {
-    for (let column = 0; column < puzzle.size; column += 1) {
-      if (board[row][column] === CELL_STATE.MARK) {
+  for (let row = 0; row < size; row += 1) {
+    const boardRow = board[row];
+
+    for (let column = 0; column < size; column += 1) {
+      const cellState = boardRow[column];
+      const index = cellIndex(row, column, size);
+
+      if (cellState === CELL_STATE.MARK) {
         rowMarks[row] += 1;
         columnMarks[column] += 1;
-      }
-
-      if (board[row][column] !== CELL_STATE.QUEEN) {
         continue;
       }
 
-      const region = puzzle.regions[row][column];
+      if (cellState !== CELL_STATE.QUEEN) {
+        continue;
+      }
+
+      const region = puzzleCache.regionByIndex[index];
+      const nextRegionCount = regionCounts[region] + 1;
+
+      queenCount += 1;
       rowCounts[row] += 1;
       columnCounts[column] += 1;
-      regionCounts[region] += 1;
+      regionCounts[region] = nextRegionCount;
 
-      const key = cellKey(row, column);
-      queens.push({ row, column, region, key });
-      queenKeys.add(key);
+      if (nextRegionCount === 1) {
+        completedRegions += 1;
+      } else if (nextRegionCount === 2) {
+        completedRegions -= 1;
+      }
+
+      queenIndexes.push(index);
+      queenIndexSet.add(index);
     }
   }
 
   const conflicts = new Set();
 
-  for (const queen of queens) {
+  for (const queenIndex of queenIndexes) {
+    const row = rowFromIndex(queenIndex, size);
+    const column = columnFromIndex(queenIndex, size);
+    const region = puzzleCache.regionByIndex[queenIndex];
+
     if (
-      rowCounts[queen.row] > 1 ||
-      columnCounts[queen.column] > 1 ||
-      regionCounts[queen.region] > 1
+      rowCounts[row] > 1 ||
+      columnCounts[column] > 1 ||
+      regionCounts[region] > 1
     ) {
-      conflicts.add(queen.key);
+      addConflictIndex(conflicts, queenIndex, puzzleCache);
     }
 
-    for (const diagonalColumnOffset of [-1, 1]) {
-      const nextRow = queen.row + 1;
-      const nextColumn = queen.column + diagonalColumnOffset;
-
-      if (
-        nextRow >= puzzle.size ||
-        nextColumn < 0 ||
-        nextColumn >= puzzle.size
-      ) {
-        continue;
-      }
-
-      const otherKey = cellKey(nextRow, nextColumn);
-
-      if (queenKeys.has(otherKey)) {
-        conflicts.add(queen.key);
-        conflicts.add(otherKey);
+    for (const diagonalIndex of puzzleCache.forwardDiagonalByIndex[queenIndex]) {
+      if (queenIndexSet.has(diagonalIndex)) {
+        addConflictIndex(conflicts, queenIndex, puzzleCache);
+        addConflictIndex(conflicts, diagonalIndex, puzzleCache);
       }
     }
   }
 
   const rowViolations = new Set();
   const columnViolations = new Set();
+  let rowsSolved = true;
+  let columnsSolved = true;
+  let regionsSolved = true;
 
-  for (let row = 0; row < puzzle.size; row += 1) {
-    if (
-      rowCounts[row] > 1 ||
-      (rowCounts[row] === 0 && rowMarks[row] === puzzle.size)
-    ) {
+  for (let row = 0; row < size; row += 1) {
+    const rowCount = rowCounts[row];
+
+    if (rowCount !== 1) {
+      rowsSolved = false;
+    }
+
+    if (rowCount > 1 || (rowCount === 0 && rowMarks[row] === size)) {
       rowViolations.add(row);
     }
   }
 
-  for (let column = 0; column < puzzle.size; column += 1) {
-    if (
-      columnCounts[column] > 1 ||
-      (columnCounts[column] === 0 && columnMarks[column] === puzzle.size)
-    ) {
+  for (let column = 0; column < size; column += 1) {
+    const columnCount = columnCounts[column];
+
+    if (columnCount !== 1) {
+      columnsSolved = false;
+    }
+
+    if (columnCount > 1 || (columnCount === 0 && columnMarks[column] === size)) {
       columnViolations.add(column);
     }
   }
 
-  const queenCount = queens.length;
+  for (let region = 0; region < size; region += 1) {
+    if (regionCounts[region] !== 1) {
+      regionsSolved = false;
+    }
+  }
+
   const solved =
-    queenCount === puzzle.size &&
+    queenCount === size &&
     conflicts.size === 0 &&
-    rowCounts.every((count) => count === 1) &&
-    columnCounts.every((count) => count === 1) &&
-    regionCounts.every((count) => count === 1);
+    rowsSolved &&
+    columnsSolved &&
+    regionsSolved;
 
   return {
     queenCount,
     rowCounts,
     columnCounts,
     regionCounts,
-    completedRegions: regionCounts.filter((count) => count === 1).length,
+    completedRegions,
     conflicts,
     rowViolations,
     columnViolations,
@@ -453,10 +541,10 @@ export function analyzePlayerBoard(puzzle, board) {
   };
 }
 
-export function findHint(puzzle, board) {
-  const analysis = analyzePlayerBoard(puzzle, board);
+export function findHint(puzzle, board, analysis = null) {
+  const currentAnalysis = analysis ?? analyzePlayerBoard(puzzle, board);
 
-  if (analysis.conflicts.size > 0) {
+  if (currentAnalysis.conflicts.size > 0) {
     return {
       type: "resolve-conflicts",
       message:
@@ -540,6 +628,7 @@ function createPresetPuzzle(size, seed) {
     regions,
     palette: palette.fills,
     outlinePalette: palette.edges,
+    solutionCount: 1,
   };
 }
 
@@ -735,12 +824,13 @@ function generateQueenPlacement(size, rng) {
 }
 
 function deriveLogicalDeductions(puzzle, board) {
+  const size = puzzle.size;
   const queenOrigins = new Map();
 
-  for (let row = 0; row < puzzle.size; row += 1) {
-    for (let column = 0; column < puzzle.size; column += 1) {
+  for (let row = 0; row < size; row += 1) {
+    for (let column = 0; column < size; column += 1) {
       if (board[row][column] === CELL_STATE.QUEEN) {
-        queenOrigins.set(cellKey(row, column), {
+        queenOrigins.set(cellIndex(row, column, size), {
           kind: "placed",
           row,
           column,
@@ -782,10 +872,9 @@ function deriveLogicalDeductions(puzzle, board) {
   const forced = [];
   const impossible = [];
 
-  for (let row = 0; row < puzzle.size; row += 1) {
-    for (let column = 0; column < puzzle.size; column += 1) {
-      const key = cellKey(row, column);
-      const origin = queenOrigins.get(key);
+  for (let row = 0; row < size; row += 1) {
+    for (let column = 0; column < size; column += 1) {
+      const origin = queenOrigins.get(cellIndex(row, column, size));
 
       if (origin && board[row][column] !== CELL_STATE.QUEEN) {
         forced.push({
@@ -825,46 +914,59 @@ function deriveLogicalDeductions(puzzle, board) {
 }
 
 function scanLogicalState(puzzle, board, queenOrigins) {
-  const rowQueens = Array(puzzle.size).fill(null);
-  const columnQueens = Array(puzzle.size).fill(null);
-  const regionQueens = Array(puzzle.size).fill(null);
-  const blockedReasons = Array.from({ length: puzzle.size }, () =>
-    Array(puzzle.size).fill(null),
+  const size = puzzle.size;
+  const puzzleCache = getPuzzleCache(puzzle);
+  const rowQueens = Array(size).fill(null);
+  const columnQueens = Array(size).fill(null);
+  const regionQueens = Array(size).fill(null);
+  const blockedReasons = Array.from({ length: size }, () =>
+    Array(size).fill(null),
   );
-  const candidates = Array.from({ length: puzzle.size }, () =>
-    Array(puzzle.size).fill(false),
-  );
+  const rowOptionCounts = new Uint8Array(size);
+  const columnOptionCounts = new Uint8Array(size);
+  const regionOptionCounts = new Uint8Array(size);
+  const rowOptionIndexes = new Int16Array(size);
+  const columnOptionIndexes = new Int16Array(size);
+  const regionOptionIndexes = new Int16Array(size);
   const forced = [];
 
-  for (const [key, origin] of queenOrigins.entries()) {
-    const [rowText, columnText] = key.split(":");
-    const row = Number(rowText);
-    const column = Number(columnText);
-    const region = puzzle.regions[row][column];
+  rowOptionIndexes.fill(-1);
+  columnOptionIndexes.fill(-1);
+  regionOptionIndexes.fill(-1);
+
+  for (const [index, origin] of queenOrigins.entries()) {
+    const row = rowFromIndex(index, size);
+    const column = columnFromIndex(index, size);
+    const region = puzzleCache.regionByIndex[index];
     rowQueens[row] = { row, column, origin };
     columnQueens[column] = { row, column, origin };
     regionQueens[region] = { row, column, origin };
   }
 
-  for (let row = 0; row < puzzle.size; row += 1) {
-    for (let column = 0; column < puzzle.size; column += 1) {
-      const key = cellKey(row, column);
+  for (let row = 0; row < size; row += 1) {
+    const boardRow = board[row];
+    const rowQueen = rowQueens[row];
 
-      if (queenOrigins.has(key)) {
-        candidates[row][column] = true;
+    for (let column = 0; column < size; column += 1) {
+      const index = cellIndex(row, column, size);
+
+      if (queenOrigins.has(index)) {
         continue;
       }
 
-      if (board[row][column] === CELL_STATE.MARK) {
+      if (boardRow[column] === CELL_STATE.MARK) {
         blockedReasons[row][column] = { kind: "marked" };
         continue;
       }
 
-      const region = puzzle.regions[row][column];
-      const rowQueen = rowQueens[row];
+      const region = puzzleCache.regionByIndex[index];
       const columnQueen = columnQueens[column];
       const regionQueen = regionQueens[region];
-      const diagonalQueen = findDiagonalQueen(queenOrigins, row, column);
+      const diagonalQueen = findDiagonalQueen(
+        queenOrigins,
+        puzzleCache.diagonalByIndex[index],
+        puzzleCache,
+      );
 
       if (rowQueen) {
         blockedReasons[row][column] = {
@@ -910,24 +1012,21 @@ function scanLogicalState(puzzle, board, queenOrigins) {
         continue;
       }
 
-      candidates[row][column] = true;
+      rowOptionCounts[row] += 1;
+      columnOptionCounts[column] += 1;
+      regionOptionCounts[region] += 1;
+      rowOptionIndexes[row] = index;
+      columnOptionIndexes[column] = index;
+      regionOptionIndexes[region] = index;
     }
   }
 
-  for (let row = 0; row < puzzle.size; row += 1) {
+  for (let row = 0; row < size; row += 1) {
     if (rowQueens[row]) {
       continue;
     }
 
-    const options = [];
-
-    for (let column = 0; column < puzzle.size; column += 1) {
-      if (candidates[row][column]) {
-        options.push({ row, column });
-      }
-    }
-
-    if (options.length === 0) {
+    if (rowOptionCounts[row] === 0) {
       return {
         consistent: false,
         blockedReasons,
@@ -935,33 +1034,26 @@ function scanLogicalState(puzzle, board, queenOrigins) {
       };
     }
 
-    if (options.length === 1) {
+    if (rowOptionCounts[row] === 1) {
+      const onlyIndex = rowOptionIndexes[row];
       forced.push({
-        row: options[0].row,
-        column: options[0].column,
+        row: rowFromIndex(onlyIndex, size),
+        column: columnFromIndex(onlyIndex, size),
         reason: {
           kind: "row-single",
-          row: options[0].row,
-          column: options[0].column,
+          row: rowFromIndex(onlyIndex, size),
+          column: columnFromIndex(onlyIndex, size),
         },
       });
     }
   }
 
-  for (let column = 0; column < puzzle.size; column += 1) {
+  for (let column = 0; column < size; column += 1) {
     if (columnQueens[column]) {
       continue;
     }
 
-    const options = [];
-
-    for (let row = 0; row < puzzle.size; row += 1) {
-      if (candidates[row][column]) {
-        options.push({ row, column });
-      }
-    }
-
-    if (options.length === 0) {
+    if (columnOptionCounts[column] === 0) {
       return {
         consistent: false,
         blockedReasons,
@@ -969,38 +1061,26 @@ function scanLogicalState(puzzle, board, queenOrigins) {
       };
     }
 
-    if (options.length === 1) {
+    if (columnOptionCounts[column] === 1) {
+      const onlyIndex = columnOptionIndexes[column];
       forced.push({
-        row: options[0].row,
-        column: options[0].column,
+        row: rowFromIndex(onlyIndex, size),
+        column: columnFromIndex(onlyIndex, size),
         reason: {
           kind: "column-single",
-          row: options[0].row,
-          column: options[0].column,
+          row: rowFromIndex(onlyIndex, size),
+          column: columnFromIndex(onlyIndex, size),
         },
       });
     }
   }
 
-  for (let region = 0; region < puzzle.size; region += 1) {
+  for (let region = 0; region < size; region += 1) {
     if (regionQueens[region]) {
       continue;
     }
 
-    const options = [];
-
-    for (let row = 0; row < puzzle.size; row += 1) {
-      for (let column = 0; column < puzzle.size; column += 1) {
-        if (
-          puzzle.regions[row][column] === region &&
-          candidates[row][column]
-        ) {
-          options.push({ row, column });
-        }
-      }
-    }
-
-    if (options.length === 0) {
+    if (regionOptionCounts[region] === 0) {
       return {
         consistent: false,
         blockedReasons,
@@ -1008,14 +1088,15 @@ function scanLogicalState(puzzle, board, queenOrigins) {
       };
     }
 
-    if (options.length === 1) {
+    if (regionOptionCounts[region] === 1) {
+      const onlyIndex = regionOptionIndexes[region];
       forced.push({
-        row: options[0].row,
-        column: options[0].column,
+        row: rowFromIndex(onlyIndex, size),
+        column: columnFromIndex(onlyIndex, size),
         reason: {
           kind: "region-single",
-          row: options[0].row,
-          column: options[0].column,
+          row: rowFromIndex(onlyIndex, size),
+          column: columnFromIndex(onlyIndex, size),
           region,
         },
       });
@@ -1104,25 +1185,16 @@ function describeBlockedByStructure(blocker, prefix, row, column) {
   return `${prefix} at row ${blocker.row + 1}, column ${blocker.column + 1}, so row ${row + 1}, column ${column + 1} cannot be a queen.`;
 }
 
-function findDiagonalQueen(queenOrigins, row, column) {
-  for (const [rowStep, columnStep] of [
-    [-1, -1],
-    [-1, 1],
-    [1, -1],
-    [1, 1],
-  ]) {
-    const nextRow = row + rowStep;
-    const nextColumn = column + columnStep;
-    const key = cellKey(nextRow, nextColumn);
-
-    if (!queenOrigins.has(key)) {
+function findDiagonalQueen(queenOrigins, diagonalIndexes, puzzleCache) {
+  for (const index of diagonalIndexes) {
+    if (!queenOrigins.has(index)) {
       continue;
     }
 
     return {
-      row: nextRow,
-      column: nextColumn,
-      origin: queenOrigins.get(key),
+      row: puzzleCache.rowByIndex[index],
+      column: puzzleCache.columnByIndex[index],
+      origin: queenOrigins.get(index),
     };
   }
 
@@ -1516,6 +1588,8 @@ function generatePalette(size, seed) {
     { fill: "hsl(220 68% 60%)", edge: "hsl(220 72% 28%)" },
     { fill: "hsl(274 48% 62%)", edge: "hsl(274 54% 28%)" },
     { fill: "hsl(356 58% 65%)", edge: "hsl(356 62% 30%)" },
+    { fill: "hsl(110 46% 58%)", edge: "hsl(110 52% 26%)" },
+    { fill: "hsl(286 42% 60%)", edge: "hsl(286 48% 28%)" },
   ];
   const offset = normalizeSeed(seed) % swatches.length;
   const fills = [];
@@ -1576,4 +1650,79 @@ function normalizeSeed(value) {
 
 function cellKey(row, column) {
   return `${row}:${column}`;
+}
+
+function getPuzzleCache(puzzle) {
+  if (PUZZLE_CACHE.has(puzzle)) {
+    return PUZZLE_CACHE.get(puzzle);
+  }
+
+  const size = puzzle.size;
+  const totalCells = size * size;
+  const regionByIndex = new Uint8Array(totalCells);
+  const rowByIndex = new Uint8Array(totalCells);
+  const columnByIndex = new Uint8Array(totalCells);
+  const keyByIndex = Array(totalCells);
+  const diagonalByIndex = Array.from({ length: totalCells }, () => []);
+  const forwardDiagonalByIndex = Array.from({ length: totalCells }, () => []);
+
+  for (let row = 0; row < size; row += 1) {
+    for (let column = 0; column < size; column += 1) {
+      const index = cellIndex(row, column, size);
+
+      regionByIndex[index] = puzzle.regions[row][column];
+      rowByIndex[index] = row;
+      columnByIndex[index] = column;
+      keyByIndex[index] = cellKey(row, column);
+
+      for (const [rowStep, columnStep] of DIAGONAL_STEPS) {
+        const nextRow = row + rowStep;
+        const nextColumn = column + columnStep;
+
+        if (
+          nextRow < 0 ||
+          nextRow >= size ||
+          nextColumn < 0 ||
+          nextColumn >= size
+        ) {
+          continue;
+        }
+
+        const nextIndex = cellIndex(nextRow, nextColumn, size);
+        diagonalByIndex[index].push(nextIndex);
+
+        if (rowStep === 1) {
+          forwardDiagonalByIndex[index].push(nextIndex);
+        }
+      }
+    }
+  }
+
+  const cache = {
+    regionByIndex,
+    rowByIndex,
+    columnByIndex,
+    keyByIndex,
+    diagonalByIndex,
+    forwardDiagonalByIndex,
+  };
+
+  PUZZLE_CACHE.set(puzzle, cache);
+  return cache;
+}
+
+function cellIndex(row, column, size) {
+  return row * size + column;
+}
+
+function rowFromIndex(index, size) {
+  return Math.floor(index / size);
+}
+
+function columnFromIndex(index, size) {
+  return index % size;
+}
+
+function addConflictIndex(conflicts, index, puzzleCache) {
+  conflicts.add(puzzleCache.keyByIndex[index]);
 }

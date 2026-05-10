@@ -45,148 +45,281 @@
 
       <section class="workspace">
         <div class="board-panel">
-          <div class="toolbar">
-            <div class="control-group">
-              <label class="field-label" for="size-select">Board size</label>
-              <select id="size-select" class="select-input"></select>
+          <div class="playbar">
+            <div class="playbar-copy">
+              <p class="playbar-title">Queen's Garden</p>
+              <p class="playbar-subtitle" data-session-label>Random puzzle · 7 x 7</p>
             </div>
-            <div class="button-row">
-              <button id="new-game-button" class="control-button primary" type="button">
-                New puzzle
-              </button>
-              <button id="reset-button" class="control-button" type="button">
-                Reset
-              </button>
-              <button id="hint-button" class="control-button accent" type="button">
-                Hint
-              </button>
-              <button id="reveal-button" class="control-button" type="button">
-                Reveal
+            <div class="playbar-actions">
+              <div class="playbar-meta">
+                <p class="playbar-timer" id="timer-label">00:00</p>
+                <p class="playbar-seed" data-seed-label>Seed: --</p>
+              </div>
+              <button
+                id="settings-button"
+                class="settings-button"
+                type="button"
+                aria-controls="settings-layer"
+                aria-expanded="false"
+              >
+                Menu
               </button>
             </div>
           </div>
 
-          <div class="status-card" id="status-card">
-            <p class="status-heading">Status</p>
-            <p class="status-text" id="status-text">
-              Generating your first board...
-            </p>
+          <div class="quick-stats">
+            <article class="quick-stat">
+              <p class="quick-stat-label">Queens</p>
+              <p class="quick-stat-value" data-queens-stat>0 / 0</p>
+            </article>
+            <article class="quick-stat">
+              <p class="quick-stat-label">Regions</p>
+              <p class="quick-stat-value" data-regions-stat>0 / 0</p>
+            </article>
+            <article class="quick-stat">
+              <p class="quick-stat-label">Conflicts</p>
+              <p class="quick-stat-value" data-conflicts-stat>0</p>
+            </article>
           </div>
-
-          <div class="hint-card" id="hint-card">
-            <p class="status-heading">Hint</p>
-            <p class="hint-text" id="hint-text">
-              Hint reads the current queens and marks, then looks for cells
-              that are forced or impossible right now.
-            </p>
-          </div>
-
-          <section class="mobile-hud" aria-label="Mobile play controls">
-            <div class="mobile-hud-head">
-              <p class="status-heading">Mobile play</p>
-              <p class="mobile-hud-tip">
-                Tap once for a dot mark, tap the same tile again for a queen,
-                and tap once more to clear it. Swipe across tiles to paint
-                several marks in one pass.
-              </p>
-            </div>
-            <div class="tool-row mobile-tool-row">
-              <button class="tool-button" data-tool="queen" type="button">
-                <img
-                  class="tool-icon"
-                  src="./assets/queen-token-192.png"
-                  alt=""
-                />
-                Queen
-              </button>
-              <button class="tool-button" data-tool="mark" type="button">
-                Mark
-              </button>
-              <button class="tool-button" data-tool="erase" type="button">
-                Erase
-              </button>
-            </div>
-            <div class="mobile-stat-grid">
-              <article class="stat-card mobile-stat-card">
-                <p class="stat-label">Queens</p>
-                <p class="stat-value" data-queens-stat>0 / 0</p>
-              </article>
-              <article class="stat-card mobile-stat-card">
-                <p class="stat-label">Regions</p>
-                <p class="stat-value" data-regions-stat>0 / 0</p>
-              </article>
-              <article class="stat-card mobile-stat-card">
-                <p class="stat-label">Conflicts</p>
-                <p class="stat-value" data-conflicts-stat>0</p>
-              </article>
-            </div>
-            <p class="mobile-seed" data-seed-label>Seed: --</p>
-          </section>
 
           <div class="board-shell">
             <div class="board" id="board" aria-label="Queen puzzle board"></div>
           </div>
+
+          <div class="settings-layer" id="settings-layer" hidden>
+            <button
+              id="settings-backdrop"
+              class="settings-backdrop"
+              type="button"
+              aria-label="Close settings"
+            ></button>
+            <section
+              id="settings-drawer"
+              class="settings-drawer"
+              aria-label="Game settings"
+            >
+              <div class="settings-head">
+                <div>
+                  <p class="field-label">Puzzle menu</p>
+                  <h2 class="settings-title">Garden controls</h2>
+                </div>
+                <button
+                  id="settings-close-button"
+                  class="settings-close-button"
+                  type="button"
+                >
+                  Close
+                </button>
+              </div>
+
+              <div class="settings-tabs" role="tablist" aria-label="Settings sections">
+                <button
+                  class="settings-tab-button is-active"
+                  type="button"
+                  role="tab"
+                  aria-selected="true"
+                  data-settings-tab-button="game"
+                >
+                  Game
+                </button>
+                <button
+                  class="settings-tab-button"
+                  type="button"
+                  role="tab"
+                  aria-selected="false"
+                  data-settings-tab-button="levels"
+                >
+                  Levels
+                </button>
+                <button
+                  class="settings-tab-button"
+                  type="button"
+                  role="tab"
+                  aria-selected="false"
+                  data-settings-tab-button="status"
+                >
+                  Status
+                </button>
+                <button
+                  class="settings-tab-button"
+                  type="button"
+                  role="tab"
+                  aria-selected="false"
+                  data-settings-tab-button="scores"
+                >
+                  Scores
+                </button>
+                <button
+                  class="settings-tab-button"
+                  type="button"
+                  role="tab"
+                  aria-selected="false"
+                  data-settings-tab-button="guide"
+                >
+                  Guide
+                </button>
+              </div>
+
+              <section class="settings-panel" data-settings-panel="game">
+                <div class="control-group">
+                  <label class="field-label" for="size-select">Board size</label>
+                  <select id="size-select" class="select-input"></select>
+                </div>
+                <div class="button-row settings-action-grid">
+                  <button id="new-game-button" class="control-button primary" type="button">
+                    New puzzle
+                  </button>
+                  <button id="reset-button" class="control-button" type="button">
+                    Reset
+                  </button>
+                  <button id="hint-button" class="control-button accent" type="button">
+                    Hint
+                  </button>
+                  <button id="reveal-button" class="control-button" type="button">
+                    Reveal
+                  </button>
+                </div>
+                <section class="panel-card settings-tools-card">
+                  <div class="panel-head">
+                    <h2>Desktop tools</h2>
+                    <p>Use the buttons below or press Q, X, and E.</p>
+                  </div>
+                  <div class="tool-row settings-tool-row">
+                    <button class="tool-button" data-tool="queen" type="button">
+                      <img
+                        class="tool-icon"
+                        src="./assets/queen-token-192.png"
+                        alt=""
+                      />
+                      Queen
+                    </button>
+                    <button class="tool-button" data-tool="mark" type="button">
+                      Mark
+                    </button>
+                    <button class="tool-button" data-tool="erase" type="button">
+                      Erase
+                    </button>
+                  </div>
+                </section>
+              </section>
+
+              <section class="settings-panel" data-settings-panel="levels" hidden>
+                <section class="panel-card settings-level-card">
+                  <div class="panel-head">
+                    <h2>Fixed levels</h2>
+                    <p>Each size has 40 fixed levels, plus the random puzzle option above.</p>
+                  </div>
+                  <div class="control-group">
+                    <p class="field-label">Level size</p>
+                    <div class="size-chip-row" id="level-size-row"></div>
+                  </div>
+                  <div class="level-head">
+                    <p class="level-selection-label" id="level-selection-label">
+                      Pick a fixed level to start.
+                    </p>
+                    <button id="play-selected-random-button" class="control-button" type="button">
+                      Play random
+                    </button>
+                  </div>
+                  <div class="level-grid" id="level-grid" aria-label="Fixed level picker"></div>
+                </section>
+              </section>
+
+              <section class="settings-panel" data-settings-panel="status" hidden>
+                <div class="status-card settings-card">
+                  <p class="status-heading">Status</p>
+                  <p class="status-text" id="status-text">
+                    Generating your first board...
+                  </p>
+                </div>
+                <div class="hint-card settings-card">
+                  <p class="status-heading">Hint</p>
+                  <p class="hint-text" id="hint-text">
+                    Hint reads the current queens and marks, then looks for cells
+                    that are forced or impossible right now.
+                  </p>
+                </div>
+                <section class="panel-card settings-progress-card">
+                  <div class="panel-head">
+                    <h2>Progress</h2>
+                    <p data-seed-label>Seed: --</p>
+                  </div>
+                  <div class="stat-grid settings-stat-grid">
+                    <article class="stat-card">
+                      <p class="stat-label">Queens</p>
+                      <p class="stat-value" data-queens-stat>0 / 0</p>
+                    </article>
+                    <article class="stat-card">
+                      <p class="stat-label">Regions</p>
+                      <p class="stat-value" data-regions-stat>0 / 0</p>
+                    </article>
+                    <article class="stat-card">
+                      <p class="stat-label">Conflicts</p>
+                      <p class="stat-value" data-conflicts-stat>0</p>
+                    </article>
+                  </div>
+                </section>
+              </section>
+
+              <section class="settings-panel" data-settings-panel="scores" hidden>
+                <section class="panel-card settings-score-card">
+                  <div class="panel-head">
+                    <h2>Best times</h2>
+                    <p>Saved on this device for fixed levels and random boards.</p>
+                  </div>
+                  <div class="score-summary-grid">
+                    <article class="stat-card">
+                      <p class="stat-label">Fixed solved</p>
+                      <p class="stat-value" id="score-fixed-total">0 / 0</p>
+                    </article>
+                    <article class="stat-card">
+                      <p class="stat-label">Random records</p>
+                      <p class="stat-value" id="score-random-total">0</p>
+                    </article>
+                    <article class="stat-card">
+                      <p class="stat-label">Current size</p>
+                      <p class="stat-value" id="score-size-summary">7 x 7</p>
+                    </article>
+                  </div>
+                  <div class="control-group">
+                    <p class="field-label">Score size</p>
+                    <div class="size-chip-row" id="score-size-row"></div>
+                  </div>
+                  <div class="score-random-card">
+                    <p class="field-label">Best random time</p>
+                    <p class="score-random-value" id="score-random-best">--</p>
+                  </div>
+                  <div class="score-level-grid" id="score-level-grid" aria-label="Best fixed level times"></div>
+                </section>
+              </section>
+
+              <section class="settings-panel" data-settings-panel="guide" hidden>
+                <section class="panel-card settings-guide-card">
+                  <div class="panel-head">
+                    <h2>Mobile play</h2>
+                    <p>The board now stays front and center, while this drawer holds the longer notes.</p>
+                  </div>
+                  <ul class="tips-list">
+                    <li>Tap once for a dot mark, tap the same cell again for a queen, and tap once more to clear.</li>
+                    <li>Swipe across cells to lay down several dot marks at once.</li>
+                    <li>Open this menu for board size, fixed levels, best times, reset, reveal, and hint.</li>
+                  </ul>
+                </section>
+                <section class="panel-card tips-panel">
+                  <div class="panel-head">
+                    <h2>How to play</h2>
+                  </div>
+                  <ul class="tips-list">
+                    <li>Every colored region must hold exactly one queen.</li>
+                    <li>Rows and columns also need exactly one queen each.</li>
+                    <li>Queens may not sit on touching diagonals.</li>
+                    <li>On desktop, click with the active tool, or hold the right mouse button and hover to paint marks.</li>
+                  </ul>
+                </section>
+              </section>
+            </section>
+          </div>
         </div>
-
-        <aside class="side-panel">
-          <section class="panel-card desktop-panel">
-            <div class="panel-head">
-              <h2>Tools</h2>
-              <p>Use the buttons below or press Q, X, and E.</p>
-            </div>
-            <div class="tool-row">
-              <button class="tool-button" data-tool="queen" type="button">
-                <img
-                  class="tool-icon"
-                  src="./assets/queen-token-192.png"
-                  alt=""
-                />
-                Queen
-              </button>
-              <button class="tool-button" data-tool="mark" type="button">
-                Mark
-              </button>
-              <button class="tool-button" data-tool="erase" type="button">
-                Erase
-              </button>
-            </div>
-          </section>
-
-          <section class="panel-card desktop-panel">
-            <div class="panel-head">
-              <h2>Progress</h2>
-              <p id="seed-label" data-seed-label>Seed: --</p>
-            </div>
-            <div class="stat-grid">
-              <article class="stat-card">
-                <p class="stat-label">Queens</p>
-                <p class="stat-value" id="queens-stat" data-queens-stat>0 / 0</p>
-              </article>
-              <article class="stat-card">
-                <p class="stat-label">Regions</p>
-                <p class="stat-value" id="regions-stat" data-regions-stat>0 / 0</p>
-              </article>
-              <article class="stat-card">
-                <p class="stat-label">Conflicts</p>
-                <p class="stat-value" id="conflicts-stat" data-conflicts-stat>0</p>
-              </article>
-            </div>
-          </section>
-
-          <section class="panel-card tips-panel">
-            <div class="panel-head">
-              <h2>How to play</h2>
-            </div>
-            <ul class="tips-list">
-              <li>On mobile, tap once for a dot mark, tap again for a queen, and tap once more to clear.</li>
-              <li>On mobile, swipe across cells to lay down several dot marks at once.</li>
-              <li>On desktop, click with the active tool, or hold the right mouse button and hover to paint marks.</li>
-              <li>Every colored region must hold exactly one queen.</li>
-              <li>Rows and columns also need exactly one queen each.</li>
-              <li>Queens may not sit on touching diagonals.</li>
-            </ul>
-          </section>
-        </aside>
       </section>
     </main>
 
