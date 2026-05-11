@@ -9,7 +9,7 @@ import {
   validateSolutionColumns,
 } from "../src/engine.js";
 
-const DATABASE_LEVELS_PER_SIZE = 10;
+const DATABASE_LEVELS_PER_SIZE = 20;
 const PROCEDURAL_DATABASE_SIZES = new Set([7, 8, 9]);
 const OUTPUT_PATH = new URL("../src/level-db.js", import.meta.url);
 

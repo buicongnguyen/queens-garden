@@ -1,4 +1,5 @@
 import {
+  LEVELS_PER_SIZE,
   countSolutions,
   createFixedLevelPuzzle,
   createProceduralPuzzle,
@@ -12,9 +13,17 @@ const PROCEDURAL_SIZES = [7, 8, 9];
 
 for (const size of SUPPORTED_SIZES) {
   const levelCount = getLevelCount(size);
+  const seenLayouts = new Set();
+
+  if (levelCount !== LEVELS_PER_SIZE) {
+    throw new Error(
+      `Expected ${LEVELS_PER_SIZE} saved levels for size ${size}, found ${levelCount}.`,
+    );
+  }
 
   for (let levelIndex = 1; levelIndex <= levelCount; levelIndex += 1) {
     const puzzle = createFixedLevelPuzzle(size, levelIndex);
+    const layoutKey = serializeRegions(puzzle.regions);
     const solutions = countSolutions(
       {
         ...puzzle,
@@ -42,6 +51,14 @@ for (const size of SUPPORTED_SIZES) {
         `Saved level ${levelIndex} for size ${size} has disconnected region ${regionIssue.region}.`,
       );
     }
+
+    if (seenLayouts.has(layoutKey)) {
+      throw new Error(
+        `Saved level ${levelIndex} for size ${size} duplicates an earlier layout.`,
+      );
+    }
+
+    seenLayouts.add(layoutKey);
 
     console.log(
       `size ${size} level ${String(levelIndex).padStart(2, "0")} verified`,
@@ -86,3 +103,7 @@ for (const size of PROCEDURAL_SIZES) {
 }
 
 console.log("All generated puzzles passed validation.");
+
+function serializeRegions(regions) {
+  return regions.map((row) => row.join(",")).join("|");
+}
