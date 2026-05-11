@@ -248,6 +248,39 @@ h1 {
   gap: 0.65rem;
 }
 
+.playbar-stats {
+  display: inline-flex;
+  align-items: stretch;
+  gap: 0.5rem;
+}
+
+.playbar-stat {
+  min-width: 5.4rem;
+  padding: 0.58rem 0.72rem;
+  border-radius: 18px;
+  background: rgba(255, 255, 255, 0.78);
+  box-shadow: inset 0 0 0 1px rgba(23, 35, 59, 0.07);
+}
+
+.playbar-stat-label,
+.playbar-stat-value {
+  margin: 0;
+}
+
+.playbar-stat-label {
+  color: var(--muted);
+  font-size: 0.72rem;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.playbar-stat-value {
+  margin-top: 0.28rem;
+  font-size: 0.96rem;
+  font-weight: 700;
+}
+
 .playbar-meta {
   display: grid;
   justify-items: end;
@@ -277,34 +310,6 @@ h1 {
   color: var(--ink);
   box-shadow: inset 0 0 0 1px rgba(23, 35, 59, 0.08);
   cursor: pointer;
-}
-
-.quick-stats {
-  display: grid;
-  grid-template-columns: repeat(3, minmax(0, 1fr));
-  gap: 0.65rem;
-  margin-top: 0.85rem;
-}
-
-.quick-stat {
-  padding: 0.8rem 0.75rem;
-  border-radius: 18px;
-  background: rgba(255, 255, 255, 0.76);
-  box-shadow: inset 0 0 0 1px rgba(23, 35, 59, 0.07);
-}
-
-.quick-stat-label {
-  color: var(--muted);
-  font-size: 0.76rem;
-  font-weight: 700;
-  letter-spacing: 0.08em;
-  text-transform: uppercase;
-}
-
-.quick-stat-value {
-  margin-top: 0.35rem;
-  font-size: 1.02rem;
-  font-weight: 700;
 }
 
 .settings-layer {
@@ -1025,9 +1030,23 @@ h1 {
   }
 
   .playbar-actions {
-    flex-direction: column;
-    align-items: end;
+    flex-wrap: wrap;
+    justify-content: end;
     gap: 0.45rem;
+  }
+
+  .playbar-stats {
+    gap: 0.4rem;
+  }
+
+  .playbar-stat {
+    min-width: 4.85rem;
+    padding: 0.5rem 0.62rem;
+    border-radius: 16px;
+  }
+
+  .playbar-stat-value {
+    font-size: 0.9rem;
   }
 
   .playbar-meta {
@@ -1038,20 +1057,6 @@ h1 {
   .settings-close-button {
     padding: 0.48rem 0.72rem;
     font-size: 0.9rem;
-  }
-
-  .quick-stats {
-    gap: 0.45rem;
-    margin-top: 0.7rem;
-  }
-
-  .quick-stat {
-    padding: 0.62rem 0.55rem;
-    border-radius: 16px;
-  }
-
-  .quick-stat-value {
-    font-size: 0.94rem;
   }
 
   .board-shell {
@@ -1118,6 +1123,23 @@ h1 {
 
   .playbar {
     gap: 0.7rem;
+  }
+
+  .playbar-stats {
+    gap: 0.34rem;
+  }
+
+  .playbar-stat {
+    min-width: 4.25rem;
+    padding: 0.46rem 0.56rem;
+  }
+
+  .playbar-stat-label {
+    font-size: 0.66rem;
+  }
+
+  .playbar-stat-value {
+    font-size: 0.84rem;
   }
 
   .playbar-meta {

@@ -51,6 +51,16 @@
               <p class="playbar-subtitle" data-session-label>Random puzzle · 7 x 7</p>
             </div>
             <div class="playbar-actions">
+              <div class="playbar-stats" aria-label="Puzzle progress">
+                <article class="playbar-stat">
+                  <p class="playbar-stat-label">Queens</p>
+                  <p class="playbar-stat-value" data-queens-stat>0 / 0</p>
+                </article>
+                <article class="playbar-stat">
+                  <p class="playbar-stat-label">Conflicts</p>
+                  <p class="playbar-stat-value" data-conflicts-stat>0</p>
+                </article>
+              </div>
               <div class="playbar-meta">
                 <p class="playbar-timer" id="timer-label">00:00</p>
                 <p class="playbar-seed" data-seed-label>Seed: --</p>
@@ -65,21 +75,6 @@
                 Menu
               </button>
             </div>
-          </div>
-
-          <div class="quick-stats">
-            <article class="quick-stat">
-              <p class="quick-stat-label">Queens</p>
-              <p class="quick-stat-value" data-queens-stat>0 / 0</p>
-            </article>
-            <article class="quick-stat">
-              <p class="quick-stat-label">Regions</p>
-              <p class="quick-stat-value" data-regions-stat>0 / 0</p>
-            </article>
-            <article class="quick-stat">
-              <p class="quick-stat-label">Conflicts</p>
-              <p class="quick-stat-value" data-conflicts-stat>0</p>
-            </article>
           </div>
 
           <div class="board-shell">
@@ -248,10 +243,6 @@
                     <article class="stat-card">
                       <p class="stat-label">Queens</p>
                       <p class="stat-value" data-queens-stat>0 / 0</p>
-                    </article>
-                    <article class="stat-card">
-                      <p class="stat-label">Regions</p>
-                      <p class="stat-value" data-regions-stat>0 / 0</p>
                     </article>
                     <article class="stat-card">
                       <p class="stat-label">Conflicts</p>

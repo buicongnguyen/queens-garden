@@ -1,13 +1,13 @@
 import {
   CELL_STATE,
-  LEVELS_PER_SIZE,
   SUPPORTED_SIZES,
   analyzePlayerBoard,
-  createFixedLevelSeed,
+  createFixedLevelPuzzle,
   createEmptyBoard,
-  createPuzzle,
+  createRandomLevelPuzzle,
   findHint,
   formatSeed,
+  getLevelCount,
   randomSeed,
   solutionBoard,
 } from "./engine.js";
@@ -446,12 +446,9 @@ async function buildPuzzle(size, options = {}) {
   const mode = options.mode === "fixed" ? "fixed" : "random";
   const levelIndex =
     mode === "fixed"
-      ? clampLevelIndex(options.levelIndex ?? state.levelIndex ?? 1)
+      ? clampLevelIndex(size, options.levelIndex ?? state.levelIndex ?? 1)
       : null;
-  const seed =
-    mode === "fixed"
-      ? createFixedLevelSeed(size, levelIndex)
-      : options.seed ?? randomSeed();
+  const seed = mode === "random" ? options.seed ?? randomSeed() : null;
 
   state.loading = true;
   state.size = size;
@@ -480,7 +477,10 @@ async function buildPuzzle(size, options = {}) {
   await nextFrame();
 
   try {
-    state.puzzle = createPuzzle(size, seed);
+    state.puzzle =
+      mode === "fixed"
+        ? createFixedLevelPuzzle(size, levelIndex)
+        : createRandomLevelPuzzle(size, seed);
     state.board = createEmptyBoard(size);
     state.analysis = analyzePlayerBoard(state.puzzle, state.board);
     restartTimer();
@@ -570,7 +570,10 @@ function renderStats() {
 
 function renderStatus() {
   if (state.loading) {
-    statusText.textContent = "Generating a fresh board with one unique solution...";
+    statusText.textContent =
+      state.mode === "fixed"
+        ? "Loading a saved level..."
+        : "Loading a saved random board...";
     return;
   }
 
@@ -648,13 +651,14 @@ function renderLevelPicker() {
   renderSizeChipRow(levelSizeRow, "level-size", state.levelPickerSize);
 
   const solvedCount = getFixedSolvedCountForSize(state.levelPickerSize);
+  const levelCount = getLevelCount(state.levelPickerSize);
   const sizeLabel = `${state.levelPickerSize} x ${state.levelPickerSize}`;
   const currentLevelText =
     state.mode === "fixed" && state.size === state.levelPickerSize && state.levelIndex
       ? `Current level ${padLevel(state.levelIndex)}`
       : "Pick a fixed level to start.";
   levelSelectionLabel.textContent =
-    `${sizeLabel} · ${solvedCount} / ${LEVELS_PER_SIZE} cleared · ${currentLevelText}`;
+    `${sizeLabel} · ${solvedCount} / ${levelCount} cleared · ${currentLevelText}`;
 
   playSelectedRandomButton.textContent = `Play random ${sizeLabel}`;
   playSelectedRandomButton.classList.toggle(
@@ -664,7 +668,7 @@ function renderLevelPicker() {
 
   const fragment = document.createDocumentFragment();
 
-  for (let levelIndex = 1; levelIndex <= LEVELS_PER_SIZE; levelIndex += 1) {
+  for (let levelIndex = 1; levelIndex <= levelCount; levelIndex += 1) {
     const bestMs = getFixedBestTime(state.levelPickerSize, levelIndex);
     const button = document.createElement("button");
     const label = document.createElement("span");
@@ -702,18 +706,22 @@ function renderScores() {
   renderSizeChipRow(scoreSizeRow, "score-size", state.scoreSize);
 
   const fixedSolvedTotal = getFixedSolvedTotal();
-  const fixedPossibleTotal = SUPPORTED_SIZES.length * LEVELS_PER_SIZE;
+  const fixedPossibleTotal = SUPPORTED_SIZES.reduce(
+    (total, size) => total + getLevelCount(size),
+    0,
+  );
   const randomSolvedTotal = Object.keys(state.scoreData.random).length;
+  const scoreLevelCount = getLevelCount(state.scoreSize);
 
   scoreFixedTotal.textContent = `${fixedSolvedTotal} / ${fixedPossibleTotal}`;
   scoreRandomTotal.textContent = String(randomSolvedTotal);
   scoreSizeSummary.textContent =
-    `${state.scoreSize} x ${state.scoreSize} · ${getFixedSolvedCountForSize(state.scoreSize)} / ${LEVELS_PER_SIZE}`;
+    `${state.scoreSize} x ${state.scoreSize} · ${getFixedSolvedCountForSize(state.scoreSize)} / ${scoreLevelCount}`;
   scoreRandomBest.textContent = formatBestTime(getRandomBestTime(state.scoreSize));
 
   const fragment = document.createDocumentFragment();
 
-  for (let levelIndex = 1; levelIndex <= LEVELS_PER_SIZE; levelIndex += 1) {
+  for (let levelIndex = 1; levelIndex <= scoreLevelCount; levelIndex += 1) {
     const bestMs = getFixedBestTime(state.scoreSize, levelIndex);
     const card = document.createElement("article");
     const label = document.createElement("p");
@@ -1145,26 +1153,27 @@ function describeScoreSummary(summary) {
 
 function getSessionLabel() {
   const sizeLabel = `${state.size} x ${state.size}`;
+  const levelCount = getLevelCount(state.size);
 
   if (state.loading && state.mode === "fixed" && state.levelIndex) {
-    return `Loading level ${padLevel(state.levelIndex)} / ${LEVELS_PER_SIZE} · ${sizeLabel}`;
+    return `Loading level ${padLevel(state.levelIndex)} / ${levelCount} · ${sizeLabel}`;
   }
 
   if (state.loading) {
-    return `Building random puzzle · ${sizeLabel}`;
+    return `Loading random puzzle · ${sizeLabel}`;
   }
 
   if (state.mode === "fixed" && state.levelIndex) {
-    return `Level ${padLevel(state.levelIndex)} / ${LEVELS_PER_SIZE} · ${sizeLabel}`;
+    return `Level ${padLevel(state.levelIndex)} / ${levelCount} · ${sizeLabel}`;
   }
 
   return `Random puzzle · ${sizeLabel}`;
 }
 
-function clampLevelIndex(levelIndex) {
+function clampLevelIndex(size, levelIndex) {
   const safeIndex = Number(levelIndex);
   return Math.min(
-    LEVELS_PER_SIZE,
+    getLevelCount(size),
     Math.max(1, Number.isInteger(safeIndex) ? safeIndex : 1),
   );
 }
@@ -1203,7 +1212,17 @@ function getRandomBestTime(size) {
 }
 
 function getFixedSolvedCountForSize(size) {
-  return Object.keys(state.scoreData.fixed[String(size)] ?? {}).length;
+  const saved = state.scoreData.fixed[String(size)] ?? {};
+  const limit = getLevelCount(size);
+  let solvedCount = 0;
+
+  for (let levelIndex = 1; levelIndex <= limit; levelIndex += 1) {
+    if (saved[String(levelIndex)] !== undefined) {
+      solvedCount += 1;
+    }
+  }
+
+  return solvedCount;
 }
 
 function getFixedSolvedTotal() {

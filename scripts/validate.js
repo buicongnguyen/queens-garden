@@ -1,30 +1,88 @@
 import {
   countSolutions,
-  createPuzzle,
+  createFixedLevelPuzzle,
+  createProceduralPuzzle,
+  findDisconnectedRegion,
+  getLevelCount,
+  SUPPORTED_SIZES,
   validateSolutionColumns,
 } from "../src/engine.js";
 
-const sizes = [7, 8, 9, 10, 11, 12, 13, 14, 15];
+const PROCEDURAL_SIZES = [7, 8, 9];
 
-for (const size of sizes) {
-  for (let attempt = 0; attempt < 3; attempt += 1) {
-    const seed = size * 1000 + attempt * 37;
-    const puzzle = createPuzzle(size, seed);
-    const solutions = countSolutions(puzzle, 2);
+for (const size of SUPPORTED_SIZES) {
+  const levelCount = getLevelCount(size);
+
+  for (let levelIndex = 1; levelIndex <= levelCount; levelIndex += 1) {
+    const puzzle = createFixedLevelPuzzle(size, levelIndex);
+    const solutions = countSolutions(
+      {
+        ...puzzle,
+        solutionCount: null,
+      },
+      2,
+    );
     const validSolution = validateSolutionColumns(puzzle, puzzle.queens);
+    const regionIssue = findDisconnectedRegion(puzzle.regions);
 
     if (solutions !== 1) {
-      throw new Error(`Expected one solution for size ${size}, found ${solutions}.`);
+      throw new Error(
+        `Expected one solution for size ${size} level ${levelIndex}, found ${solutions}.`,
+      );
     }
 
     if (!validSolution) {
-      throw new Error(`Generated solution failed validation for size ${size}.`);
+      throw new Error(
+        `Saved level ${levelIndex} failed queen validation for size ${size}.`,
+      );
+    }
+
+    if (regionIssue) {
+      throw new Error(
+        `Saved level ${levelIndex} for size ${size} has disconnected region ${regionIssue.region}.`,
+      );
     }
 
     console.log(
-      `size ${size} seed ${puzzle.seed.toString(16).toUpperCase()} verified`,
+      `size ${size} level ${String(levelIndex).padStart(2, "0")} verified`,
     );
   }
+}
+
+for (const size of PROCEDURAL_SIZES) {
+  const seed = size * 2000 + 91;
+  const puzzle = createProceduralPuzzle(size, seed);
+  const solutions = countSolutions(
+    {
+      ...puzzle,
+      solutionCount: null,
+    },
+    2,
+  );
+  const validSolution = validateSolutionColumns(puzzle, puzzle.queens);
+  const regionIssue = findDisconnectedRegion(puzzle.regions);
+
+  if (solutions !== 1) {
+    throw new Error(
+      `Expected one procedural solution for size ${size}, found ${solutions}.`,
+    );
+  }
+
+  if (!validSolution) {
+    throw new Error(
+      `Procedural solution failed validation for size ${size}.`,
+    );
+  }
+
+  if (regionIssue) {
+    throw new Error(
+      `Procedural solution has disconnected region ${regionIssue.region} for size ${size}.`,
+    );
+  }
+
+  console.log(
+    `procedural size ${size} seed ${puzzle.seed.toString(16).toUpperCase()} verified`,
+  );
 }
 
 console.log("All generated puzzles passed validation.");
