@@ -15,6 +15,7 @@ import {
 const QUEEN_ICON_PATH = "./assets/queen-token-192.png";
 const CELL_GRID_LINE = "rgba(255, 255, 255, 0.42)";
 const SCORE_STORAGE_KEY = "queens-garden-scores-v1";
+const MOBILE_FINAL_MARK_GRACE_MS = 320;
 
 const sizeSelect = document.querySelector("#size-select");
 const boardElement = document.querySelector("#board");
@@ -26,6 +27,8 @@ const settingsButton = document.querySelector("#settings-button");
 const settingsLayer = document.querySelector("#settings-layer");
 const settingsBackdrop = document.querySelector("#settings-backdrop");
 const settingsCloseButton = document.querySelector("#settings-close-button");
+const helpToggleButton = document.querySelector("#help-toggle");
+const helpToggleText = document.querySelector("#help-toggle-text");
 const statusText = document.querySelector("#status-text");
 const hintText = document.querySelector("#hint-text");
 const sessionLabel = document.querySelector("[data-session-label]");
@@ -52,6 +55,22 @@ const settingsTabButtons = [
 ];
 const settingsPanels = [...document.querySelectorAll("[data-settings-panel]")];
 const mobileTapQuery = window.matchMedia("(max-width: 820px)");
+const HELP_TOGGLE_DELAY_MS = 340;
+const HELP_DOUBLE_CLICK_GUARD_MS = 520;
+const HELP_COPY = Object.freeze({
+  vi: {
+    text:
+      "VI: Di động chạm chấm, chạm lại đặt hậu, vuốt để đánh dấu. PC: bấm, chuột phải kéo. Chạm đôi để EN.",
+    title: "Double tap or double click to switch to English",
+    lang: "vi",
+  },
+  en: {
+    text:
+      "EN: Mobile tap dot, tap again queen, swipe to mark. PC: click, right-drag marks. Double tap for VI.",
+    title: "Double tap or double click to switch to Vietnamese",
+    lang: "en",
+  },
+});
 
 const state = {
   puzzle: null,
@@ -60,6 +79,7 @@ const state = {
   cellElements: [],
   tokenElements: [],
   warningElements: [],
+  pendingLineGrace: null,
   gesture: null,
   suppressClick: false,
   renderedPuzzleSeed: null,
@@ -71,6 +91,9 @@ const state = {
   activeTool: "queen",
   hint: null,
   mobileTapMode: mobileTapQuery.matches,
+  helpLanguage: "vi",
+  helpLastTapAt: 0,
+  helpIgnoreDoubleClickUntil: 0,
   loading: false,
   revealedBySystem: false,
   settingsOpen: false,
@@ -116,6 +139,34 @@ settingsBackdrop.addEventListener("click", () => {
 
 settingsCloseButton.addEventListener("click", () => {
   setSettingsOpen(false);
+});
+
+helpToggleButton.addEventListener("dblclick", (event) => {
+  event.preventDefault();
+
+  if (performance.now() < state.helpIgnoreDoubleClickUntil) {
+    return;
+  }
+
+  state.helpLastTapAt = 0;
+  toggleHelpLanguage();
+});
+
+helpToggleButton.addEventListener("pointerup", (event) => {
+  if (event.pointerType !== "touch") {
+    return;
+  }
+
+  const now = performance.now();
+
+  if (now - state.helpLastTapAt <= HELP_TOGGLE_DELAY_MS) {
+    state.helpLastTapAt = 0;
+    state.helpIgnoreDoubleClickUntil = now + HELP_DOUBLE_CLICK_GUARD_MS;
+    toggleHelpLanguage();
+    return;
+  }
+
+  state.helpLastTapAt = now;
 });
 
 levelSizeRow.addEventListener("click", (event) => {
@@ -346,6 +397,7 @@ resetButton.addEventListener("click", () => {
     return;
   }
 
+  clearPendingLineGrace();
   state.gesture = null;
   state.suppressClick = false;
   state.board = createEmptyBoard(state.puzzle.size);
@@ -359,7 +411,12 @@ resetButton.addEventListener("click", () => {
 });
 
 hintButton.addEventListener("click", () => {
-  if (!state.puzzle || state.loading || state.revealedBySystem) {
+  if (
+    !state.puzzle ||
+    state.loading ||
+    state.revealedBySystem ||
+    hasPendingLineGrace()
+  ) {
     return;
   }
 
@@ -381,6 +438,7 @@ revealButton.addEventListener("click", () => {
     return;
   }
 
+  clearPendingLineGrace();
   state.gesture = null;
   state.suppressClick = false;
   state.board = solutionBoard(state.puzzle);
@@ -432,6 +490,11 @@ function setSettingsOpen(nextOpen) {
   renderSettings();
 }
 
+function toggleHelpLanguage() {
+  state.helpLanguage = state.helpLanguage === "vi" ? "en" : "vi";
+  renderHelpToggle();
+}
+
 function maybeCloseSettingsOnMobile() {
   if (mobileTapQuery.matches) {
     setSettingsOpen(false);
@@ -456,6 +519,7 @@ async function buildPuzzle(size, options = {}) {
   state.levelIndex = levelIndex;
   state.levelPickerSize = size;
   state.scoreSize = size;
+  clearPendingLineGrace();
   state.gesture = null;
   state.hint = null;
   state.suppressClick = false;
@@ -498,6 +562,7 @@ async function buildPuzzle(size, options = {}) {
 function render() {
   renderTools();
   renderSessionMeta();
+  renderHelpToggle();
   renderStats();
   renderStatus();
   renderHint();
@@ -509,11 +574,19 @@ function render() {
     renderBoard();
   }
 
+  renderControlStates();
+}
+
+function renderControlStates() {
   sizeSelect.value = String(state.size);
   sizeSelect.disabled = state.loading;
   newGameButton.disabled = state.loading;
   resetButton.disabled = state.loading || !state.puzzle;
-  hintButton.disabled = state.loading || !state.puzzle || state.revealedBySystem;
+  hintButton.disabled =
+    state.loading ||
+    !state.puzzle ||
+    state.revealedBySystem ||
+    hasPendingLineGrace();
   revealButton.disabled = state.loading || !state.puzzle || state.revealedBySystem;
 }
 
@@ -529,6 +602,14 @@ function renderTools() {
 function renderSessionMeta() {
   sessionLabel.textContent = getSessionLabel();
   timerLabel.textContent = formatDuration(state.elapsedMs);
+}
+
+function renderHelpToggle() {
+  const copy = HELP_COPY[state.helpLanguage] ?? HELP_COPY.vi;
+  helpToggleText.textContent = copy.text;
+  helpToggleText.setAttribute("lang", copy.lang);
+  helpToggleButton.title = copy.title;
+  helpToggleButton.setAttribute("aria-label", copy.title);
 }
 
 function renderSettings() {
@@ -604,9 +685,14 @@ function renderStatus() {
     return;
   }
 
+  if (hasPendingLineGrace()) {
+    statusText.textContent =
+      "Tap that last dot again to turn it into a queen, or pause a moment to confirm the line warning.";
+    return;
+  }
+
   if (
-    state.analysis.rowViolations.size > 0 ||
-    state.analysis.columnViolations.size > 0
+    hasVisibleLineViolations(state.analysis)
   ) {
     statusText.textContent =
       "A row or column is impossible right now. Clear some marks or extra queens so every line can still hold exactly one queen.";
@@ -635,6 +721,12 @@ function renderHint() {
   if (state.revealedBySystem) {
     hintText.textContent =
       "The solution is already revealed. Start a new puzzle or reset this one to play again.";
+    return;
+  }
+
+  if (hasPendingLineGrace()) {
+    hintText.textContent =
+      "Hint waits for that last mobile tap. Tap the same cell again to place the queen, or wait for the line warning to appear.";
     return;
   }
 
@@ -885,8 +977,8 @@ function syncCell(row, column) {
       ? CELL_STATE.QUEEN
       : stateValue;
   const hasLineViolation =
-    Boolean(state.analysis?.rowViolations.has(row)) ||
-    Boolean(state.analysis?.columnViolations.has(column));
+    isVisibleRowViolation(row, state.analysis) ||
+    isVisibleColumnViolation(column, state.analysis);
 
   cell.disabled = state.loading || state.revealedBySystem;
   cell.classList.toggle("is-queen", displayValue === CELL_STATE.QUEEN);
@@ -941,7 +1033,9 @@ function applyMobileTap(row, column) {
     nextValue = CELL_STATE.EMPTY;
   }
 
-  commitBoardChange(row, column, nextValue);
+  commitBoardChange(row, column, nextValue, {
+    allowFinalMarkGrace: true,
+  });
 }
 
 function finishGesture(event) {
@@ -992,7 +1086,7 @@ function resolveToolValue(current, tool) {
   return CELL_STATE.EMPTY;
 }
 
-function commitBoardChange(row, column, nextValue) {
+function commitBoardChange(row, column, nextValue, options = {}) {
   const current = state.board[row][column];
 
   if (nextValue === current) {
@@ -1001,11 +1095,20 @@ function commitBoardChange(row, column, nextValue) {
 
   const previousAnalysis = state.analysis;
   const previousHint = state.hint;
+  clearPendingLineGrace();
 
   state.board[row][column] = nextValue;
   state.analysis = analyzePlayerBoard(state.puzzle, state.board);
   state.hint = null;
   state.lastScoreSummary = null;
+  state.pendingLineGrace = createPendingLineGrace({
+    row,
+    column,
+    current,
+    nextValue,
+    previousAnalysis,
+    allowFinalMarkGrace: options.allowFinalMarkGrace,
+  });
 
   if (!previousAnalysis?.solved && state.analysis.solved) {
     stopTimer();
@@ -1016,6 +1119,7 @@ function commitBoardChange(row, column, nextValue) {
   renderStats();
   renderStatus();
   renderHint();
+  renderControlStates();
 
   if (state.lastScoreSummary) {
     renderLevelPicker();
@@ -1039,6 +1143,144 @@ function markDraggedCell(row, column) {
   }
 
   commitBoardChange(row, column, CELL_STATE.MARK);
+}
+
+function createPendingLineGrace({
+  row,
+  column,
+  current,
+  nextValue,
+  previousAnalysis,
+  allowFinalMarkGrace,
+}) {
+  if (
+    !allowFinalMarkGrace ||
+    !state.analysis ||
+    current !== CELL_STATE.EMPTY ||
+    nextValue !== CELL_STATE.MARK
+  ) {
+    return null;
+  }
+
+  const shouldSuppressRow =
+    state.analysis.rowViolations.has(row) &&
+    !previousAnalysis?.rowViolations.has(row) &&
+    state.analysis.rowCounts[row] === 0 &&
+    isMarkedOnlyRow(row);
+  const shouldSuppressColumn =
+    state.analysis.columnViolations.has(column) &&
+    !previousAnalysis?.columnViolations.has(column) &&
+    state.analysis.columnCounts[column] === 0 &&
+    isMarkedOnlyColumn(column);
+
+  if (!shouldSuppressRow && !shouldSuppressColumn) {
+    return null;
+  }
+
+  const pending = {
+    row: shouldSuppressRow ? row : null,
+    column: shouldSuppressColumn ? column : null,
+    timeoutId: 0,
+  };
+
+  pending.timeoutId = window.setTimeout(() => {
+    if (state.pendingLineGrace !== pending) {
+      return;
+    }
+
+    clearPendingLineGrace();
+    renderControlStates();
+    renderStatus();
+    renderHint();
+    renderBoard(collectGraceAffectedCellKeys(pending));
+  }, MOBILE_FINAL_MARK_GRACE_MS);
+
+  return pending;
+}
+
+function clearPendingLineGrace() {
+  const pending = state.pendingLineGrace;
+
+  if (!pending) {
+    return null;
+  }
+
+  window.clearTimeout(pending.timeoutId);
+  state.pendingLineGrace = null;
+  return pending;
+}
+
+function isMarkedOnlyRow(row) {
+  return state.board[row].every((cellState) => cellState === CELL_STATE.MARK);
+}
+
+function isMarkedOnlyColumn(column) {
+  for (let row = 0; row < state.board.length; row += 1) {
+    if (state.board[row][column] !== CELL_STATE.MARK) {
+      return false;
+    }
+  }
+
+  return true;
+}
+
+function hasVisibleLineViolations(analysis = state.analysis) {
+  if (!analysis) {
+    return false;
+  }
+
+  for (const row of analysis.rowViolations ?? []) {
+    if (isVisibleRowViolation(row, analysis)) {
+      return true;
+    }
+  }
+
+  for (const column of analysis.columnViolations ?? []) {
+    if (isVisibleColumnViolation(column, analysis)) {
+      return true;
+    }
+  }
+
+  return false;
+}
+
+function hasPendingLineGrace() {
+  return state.pendingLineGrace !== null;
+}
+
+function isVisibleRowViolation(row, analysis = state.analysis) {
+  return Boolean(
+    analysis?.rowViolations.has(row) && state.pendingLineGrace?.row !== row,
+  );
+}
+
+function isVisibleColumnViolation(column, analysis = state.analysis) {
+  return Boolean(
+    analysis?.columnViolations.has(column) &&
+      state.pendingLineGrace?.column !== column,
+  );
+}
+
+function collectGraceAffectedCellKeys(grace) {
+  const affected = new Set();
+
+  if (!grace || !state.puzzle) {
+    return affected;
+  }
+
+  if (Number.isInteger(grace.row)) {
+    for (let column = 0; column < state.puzzle.size; column += 1) {
+      affected.add(cellKey(grace.row, column));
+    }
+  }
+
+  if (Number.isInteger(grace.column)) {
+    for (let row = 0; row < state.puzzle.size; row += 1) {
+      affected.add(cellKey(row, grace.column));
+    }
+  }
+
+  return affected;
 }
 
 function markCellsAlongPath(fromKey, toKey) {

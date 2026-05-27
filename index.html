@@ -77,6 +77,18 @@
             </div>
           </div>
 
+          <button
+            id="help-toggle"
+            class="help-toggle"
+            type="button"
+            aria-live="polite"
+            title="Double tap or double click to switch language"
+          >
+            <span class="help-toggle-text" id="help-toggle-text">
+              VI: Di động chạm chấm, chạm lại đặt hậu, vuốt để đánh dấu. PC: bấm, chuột phải kéo. Chạm đôi để EN.
+            </span>
+          </button>
+
           <div class="board-shell">
             <div class="board" id="board" aria-label="Queen puzzle board"></div>
           </div>
@@ -202,7 +214,7 @@
                 <section class="panel-card settings-level-card">
                   <div class="panel-head">
                     <h2>Fixed levels</h2>
-                    <p>Each size has 40 fixed levels, plus the random puzzle option above.</p>
+                    <p>Each size has 20 fixed levels, plus the random puzzle option above.</p>
                   </div>
                   <div class="control-group">
                     <p class="field-label">Level size</p>
@@ -287,25 +299,13 @@
               <section class="settings-panel" data-settings-panel="guide" hidden>
                 <section class="panel-card settings-guide-card">
                   <div class="panel-head">
-                    <h2>Mobile play</h2>
-                    <p>The board now stays front and center, while this drawer holds the longer notes.</p>
+                    <h2>Quick help</h2>
+                    <p>Short controls stay on the main screen now.</p>
                   </div>
-                  <ul class="tips-list">
-                    <li>Tap once for a dot mark, tap the same cell again for a queen, and tap once more to clear.</li>
-                    <li>Swipe across cells to lay down several dot marks at once.</li>
-                    <li>Open this menu for board size, fixed levels, best times, reset, reveal, and hint.</li>
-                  </ul>
-                </section>
-                <section class="panel-card tips-panel">
-                  <div class="panel-head">
-                    <h2>How to play</h2>
-                  </div>
-                  <ul class="tips-list">
-                    <li>Every colored region must hold exactly one queen.</li>
-                    <li>Rows and columns also need exactly one queen each.</li>
-                    <li>Queens may not sit on touching diagonals.</li>
-                    <li>On desktop, click with the active tool, or hold the right mouse button and hover to paint marks.</li>
-                  </ul>
+                  <p class="guide-note">
+                    Double tap or double click the tiny help line above the board to
+                    switch Vietnamese and English.
+                  </p>
                 </section>
               </section>
             </section>
