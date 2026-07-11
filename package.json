@@ -1,10 +1,14 @@
 {
   "name": "queens-garden",
-  "version": "0.1.0",
+  "version": "0.2.4",
   "private": true,
   "type": "module",
   "scripts": {
     "serve": "python -m http.server 4285",
-    "test": "node scripts/validate.js"
+    "build:levels": "node scripts/build-level-db.js",
+    "test": "npm run test:syntax && npm run test:unit && npm run test:levels",
+    "test:syntax": "node --check src/main.js && node --check src/engine.js",
+    "test:unit": "node --test",
+    "test:levels": "node scripts/validate.js"
   }
 }

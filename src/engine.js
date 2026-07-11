@@ -1,7 +1,7 @@
 import {
   LEVEL_DATABASE,
   LEVELS_PER_SIZE as DATABASE_LEVELS_PER_SIZE,
-} from "./level-db.js";
+} from "./level-db.js?v=0.2.4";
 
 export const CELL_STATE = Object.freeze({
   EMPTY: 0,
@@ -291,7 +291,7 @@ export function getLevelCount(size) {
 
 export function createFixedLevelPuzzle(size, levelIndex) {
   const entry = getDatabaseLevelEntry(size, levelIndex);
-  return buildDatabasePuzzle(size, entry, entry.seed);
+  return buildDatabasePuzzle(size, entry, entry.seed, entry.seed);
 }
 
 export function createRandomLevelPuzzle(size, seed = randomSeed()) {
@@ -308,7 +308,7 @@ export function createRandomLevelPuzzle(size, seed = randomSeed()) {
   const baseSeed = normalizeSeed(seed);
   const entry = levels[baseSeed % levels.length];
   const paletteSeed = mixSeed(baseSeed, entry.seed);
-  return buildDatabasePuzzle(size, entry, paletteSeed);
+  return buildDatabasePuzzle(size, entry, baseSeed, paletteSeed);
 }
 
 export function createPuzzle(size, seed = randomSeed(), options = {}) {
@@ -359,12 +359,12 @@ function getDatabaseLevelEntry(size, levelIndex) {
   return entry;
 }
 
-function buildDatabasePuzzle(size, entry, paletteSeed) {
+function buildDatabasePuzzle(size, entry, seed, paletteSeed) {
   const palette = generatePalette(size, paletteSeed);
 
   return {
     size,
-    seed: paletteSeed,
+    seed,
     queens: [...entry.queens],
     regions: entry.regions.map((row) => [...row]),
     palette: palette.fills,
@@ -408,7 +408,7 @@ export function createProceduralPuzzle(size, seed = randomSeed()) {
         const palette = generatePalette(size, attemptSeed);
         const puzzle = {
           size,
-          seed: attemptSeed,
+          seed: baseSeed,
           queens,
           regions: generatedRegions.regions,
           palette: palette.fills,
@@ -620,6 +620,8 @@ export function analyzePlayerBoard(puzzle, board) {
   const regionCounts = new Uint8Array(size);
   const rowMarks = new Uint8Array(size);
   const columnMarks = new Uint8Array(size);
+  const regionMarks = new Uint8Array(size);
+  const regionCellCounts = new Uint16Array(size);
   const queenIndexes = [];
   const queenIndexSet = new Set();
   let queenCount = 0;
@@ -631,10 +633,14 @@ export function analyzePlayerBoard(puzzle, board) {
     for (let column = 0; column < size; column += 1) {
       const cellState = boardRow[column];
       const index = cellIndex(row, column, size);
+      const region = puzzleCache.regionByIndex[index];
+
+      regionCellCounts[region] += 1;
 
       if (cellState === CELL_STATE.MARK) {
         rowMarks[row] += 1;
         columnMarks[column] += 1;
+        regionMarks[region] += 1;
         continue;
       }
 
@@ -642,7 +648,6 @@ export function analyzePlayerBoard(puzzle, board) {
         continue;
       }
 
-      const region = puzzleCache.regionByIndex[index];
       const nextRegionCount = regionCounts[region] + 1;
 
       queenCount += 1;
@@ -686,6 +691,7 @@ export function analyzePlayerBoard(puzzle, board) {
 
   const rowViolations = new Set();
   const columnViolations = new Set();
+  const regionViolations = new Set();
   let rowsSolved = true;
   let columnsSolved = true;
   let regionsSolved = true;
@@ -718,6 +724,13 @@ export function analyzePlayerBoard(puzzle, board) {
     if (regionCounts[region] !== 1) {
       regionsSolved = false;
     }
+
+    if (
+      regionCounts[region] > 1 ||
+      (regionCounts[region] === 0 && regionMarks[region] === regionCellCounts[region])
+    ) {
+      regionViolations.add(region);
+    }
   }
 
   const solved =
@@ -736,6 +749,7 @@ export function analyzePlayerBoard(puzzle, board) {
     conflicts,
     rowViolations,
     columnViolations,
+    regionViolations,
     solved,
   };
 }
@@ -1116,7 +1130,7 @@ function deriveLogicalDeductions(puzzle, board) {
     finalBlockedReasons = scan.blockedReasons;
 
     for (const forced of scan.forced) {
-      const key = cellKey(forced.row, forced.column);
+      const key = cellIndex(forced.row, forced.column, size);
 
       if (queenOrigins.has(key)) {
         continue;
@@ -1196,6 +1210,25 @@ function scanLogicalState(puzzle, board, queenOrigins) {
     const row = rowFromIndex(index, size);
     const column = columnFromIndex(index, size);
     const region = puzzleCache.regionByIndex[index];
+
+    if (
+      !Number.isInteger(index) ||
+      index < 0 ||
+      index >= size * size ||
+      rowQueens[row] ||
+      columnQueens[column] ||
+      regionQueens[region] ||
+      puzzleCache.forwardDiagonalByIndex[index].some((diagonalIndex) =>
+        queenOrigins.has(diagonalIndex),
+      )
+    ) {
+      return {
+        consistent: false,
+        blockedReasons,
+        forced: [],
+      };
+    }
+
     rowQueens[row] = { row, column, origin };
     columnQueens[column] = { row, column, origin };
     regionQueens[region] = { row, column, origin };
@@ -2135,7 +2168,15 @@ function normalizeSeed(value) {
     return value >>> 0;
   }
 
-  const text = String(value);
+  const text = String(value).trim();
+  const formattedSeed = /^[0-9a-z]{1,7}$/i.test(text)
+    ? Number.parseInt(text, 36)
+    : Number.NaN;
+
+  if (Number.isSafeInteger(formattedSeed) && formattedSeed <= 0xffffffff) {
+    return formattedSeed >>> 0;
+  }
+
   let hash = 2166136261;
 
   for (let index = 0; index < text.length; index += 1) {
