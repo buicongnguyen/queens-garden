@@ -10,7 +10,7 @@ import {
   getLevelCount,
   randomSeed,
   solutionBoard,
-} from "./engine.js";
+} from "./engine.js?v=0.2.4";
 
 const QUEEN_ICON_PATH = "./assets/queen-token-192.png";
 const CELL_GRID_LINE = "rgba(255, 255, 255, 0.42)";
@@ -19,6 +19,7 @@ const MOBILE_FINAL_MARK_GRACE_MS = 320;
 
 const sizeSelect = document.querySelector("#size-select");
 const boardElement = document.querySelector("#board");
+const boardMessage = document.querySelector("#board-message");
 const newGameButton = document.querySelector("#new-game-button");
 const resetButton = document.querySelector("#reset-button");
 const hintButton = document.querySelector("#hint-button");
@@ -26,15 +27,16 @@ const revealButton = document.querySelector("#reveal-button");
 const settingsButton = document.querySelector("#settings-button");
 const settingsLayer = document.querySelector("#settings-layer");
 const settingsBackdrop = document.querySelector("#settings-backdrop");
+const settingsDrawer = document.querySelector("#settings-drawer");
 const settingsCloseButton = document.querySelector("#settings-close-button");
 const helpToggleButton = document.querySelector("#help-toggle");
 const helpToggleText = document.querySelector("#help-toggle-text");
+const gameAnnouncer = document.querySelector("#game-announcer");
 const statusText = document.querySelector("#status-text");
 const hintText = document.querySelector("#hint-text");
 const sessionLabel = document.querySelector("[data-session-label]");
 const timerLabel = document.querySelector("#timer-label");
 const queensStats = [...document.querySelectorAll("[data-queens-stat]")];
-const regionsStats = [...document.querySelectorAll("[data-regions-stat]")];
 const conflictsStats = [...document.querySelectorAll("[data-conflicts-stat]")];
 const seedLabels = [...document.querySelectorAll("[data-seed-label]")];
 const toolButtons = [...document.querySelectorAll("[data-tool]")];
@@ -54,20 +56,29 @@ const settingsTabButtons = [
   ...document.querySelectorAll("[data-settings-tab-button]"),
 ];
 const settingsPanels = [...document.querySelectorAll("[data-settings-panel]")];
-const mobileTapQuery = window.matchMedia("(max-width: 820px)");
-const HELP_TOGGLE_DELAY_MS = 340;
-const HELP_DOUBLE_CLICK_GUARD_MS = 520;
+const settingsInertElements = [
+  document.querySelector(".hero"),
+  ...document.querySelectorAll(
+    ".board-panel > :not(.settings-layer):not(#game-announcer)",
+  ),
+].filter(Boolean);
+const SETTINGS_FOCUSABLE_SELECTOR = [
+  "button:not([disabled])",
+  "select:not([disabled])",
+  "[href]",
+  "[tabindex]:not([tabindex='-1'])",
+].join(",");
 const HELP_COPY = Object.freeze({
   vi: {
     text:
-      "VI: Di động chạm chấm, chạm lại đặt hậu, vuốt để đánh dấu. PC: bấm, chuột phải kéo. Chạm đôi để EN.",
-    title: "Double tap or double click to switch to English",
+      "VI: Chạm một lần để đánh dấu, lần nữa đặt hậu; vuốt để đánh dấu. Chuột: bấm hoặc kéo phải. Chọn để chuyển EN.",
+    title: "Switch instructions to English",
     lang: "vi",
   },
   en: {
     text:
-      "EN: Mobile tap dot, tap again queen, swipe to mark. PC: click, right-drag marks. Double tap for VI.",
-    title: "Double tap or double click to switch to Vietnamese",
+      "EN: Touch once to mark, again for a queen; swipe to mark. Mouse: click or right-drag. Select for VI.",
+    title: "Switch instructions to Vietnamese",
     lang: "en",
   },
 });
@@ -82,7 +93,9 @@ const state = {
   pendingLineGrace: null,
   gesture: null,
   suppressClick: false,
-  renderedPuzzleSeed: null,
+  lastPointerType: null,
+  renderedPuzzle: null,
+  focusedCell: { row: 0, column: 0 },
   size: 7,
   mode: "random",
   levelIndex: null,
@@ -90,13 +103,12 @@ const state = {
   scoreSize: 7,
   activeTool: "queen",
   hint: null,
-  mobileTapMode: mobileTapQuery.matches,
-  helpLanguage: "vi",
-  helpLastTapAt: 0,
-  helpIgnoreDoubleClickUntil: 0,
+  helpLanguage: "en",
   loading: false,
+  error: null,
   revealedBySystem: false,
   settingsOpen: false,
+  settingsReturnFocus: null,
   settingsTab: "game",
   scoreData: loadScoreData(),
   clockStartedAt: 0,
@@ -119,13 +131,17 @@ for (const button of toolButtons) {
   button.addEventListener("click", () => {
     state.activeTool = button.dataset.tool;
     renderTools();
+    closeSettingsForGameAction();
   });
 }
 
 for (const button of settingsTabButtons) {
   button.addEventListener("click", () => {
-    state.settingsTab = button.dataset.settingsTabButton;
-    renderSettings();
+    activateSettingsTab(button.dataset.settingsTabButton, { focus: false });
+  });
+
+  button.addEventListener("keydown", (event) => {
+    handleSettingsTabKeydown(event, button);
   });
 }
 
@@ -141,32 +157,8 @@ settingsCloseButton.addEventListener("click", () => {
   setSettingsOpen(false);
 });
 
-helpToggleButton.addEventListener("dblclick", (event) => {
-  event.preventDefault();
-
-  if (performance.now() < state.helpIgnoreDoubleClickUntil) {
-    return;
-  }
-
-  state.helpLastTapAt = 0;
+helpToggleButton.addEventListener("click", () => {
   toggleHelpLanguage();
-});
-
-helpToggleButton.addEventListener("pointerup", (event) => {
-  if (event.pointerType !== "touch") {
-    return;
-  }
-
-  const now = performance.now();
-
-  if (now - state.helpLastTapAt <= HELP_TOGGLE_DELAY_MS) {
-    state.helpLastTapAt = 0;
-    state.helpIgnoreDoubleClickUntil = now + HELP_DOUBLE_CLICK_GUARD_MS;
-    toggleHelpLanguage();
-    return;
-  }
-
-  state.helpLastTapAt = now;
 });
 
 levelSizeRow.addEventListener("click", (event) => {
@@ -178,6 +170,9 @@ levelSizeRow.addEventListener("click", (event) => {
 
   state.levelPickerSize = Number(button.dataset.levelSize);
   renderLevelPicker();
+  levelSizeRow
+    .querySelector(`[data-level-size="${state.levelPickerSize}"]`)
+    ?.focus();
 });
 
 levelGrid.addEventListener("click", (event) => {
@@ -191,12 +186,12 @@ levelGrid.addEventListener("click", (event) => {
   const levelIndex = Number(button.dataset.levelIndex);
   state.levelPickerSize = size;
   state.scoreSize = size;
-  maybeCloseSettingsOnMobile();
+  closeSettingsForGameAction();
   void buildPuzzle(size, { mode: "fixed", levelIndex });
 });
 
 playSelectedRandomButton.addEventListener("click", () => {
-  maybeCloseSettingsOnMobile();
+  closeSettingsForGameAction();
   void buildPuzzle(state.levelPickerSize, { mode: "random" });
 });
 
@@ -209,6 +204,7 @@ scoreSizeRow.addEventListener("click", (event) => {
 
   state.scoreSize = Number(button.dataset.scoreSize);
   renderScores();
+  scoreSizeRow.querySelector(`[data-score-size="${state.scoreSize}"]`)?.focus();
 });
 
 boardElement.addEventListener("click", (event) => {
@@ -218,15 +214,21 @@ boardElement.addEventListener("click", (event) => {
     return;
   }
 
-  if (state.suppressClick) {
+  if (state.suppressClick && event.detail > 0) {
     state.suppressClick = false;
+    state.lastPointerType = null;
     return;
   }
 
+  state.suppressClick = false;
+
   const row = Number(cell.dataset.row);
   const column = Number(cell.dataset.column);
+  const pointerType = state.lastPointerType;
+  state.lastPointerType = null;
+  setFocusedCell(row, column);
 
-  if (state.mobileTapMode && !event.shiftKey) {
+  if (pointerType === "touch" && !event.shiftKey) {
     applyMobileTap(row, column);
     return;
   }
@@ -235,6 +237,8 @@ boardElement.addEventListener("click", (event) => {
   applyTool(row, column, quickTool);
 });
 
+boardElement.addEventListener("keydown", handleBoardKeydown);
+
 boardElement.addEventListener("pointerdown", (event) => {
   const cell = event.target.closest(".cell");
 
@@ -242,7 +246,10 @@ boardElement.addEventListener("pointerdown", (event) => {
     return;
   }
 
-  if (!state.puzzle || state.loading || state.revealedBySystem) {
+  state.suppressClick = false;
+  state.lastPointerType = event.pointerType;
+
+  if (!canEditBoard()) {
     return;
   }
 
@@ -250,7 +257,7 @@ boardElement.addEventListener("pointerdown", (event) => {
   const column = Number(cell.dataset.column);
   const key = cellKey(row, column);
 
-  if (!state.mobileTapMode && event.pointerType === "mouse" && event.button === 2) {
+  if (event.pointerType === "mouse" && event.button === 2) {
     event.preventDefault();
     boardElement.setPointerCapture(event.pointerId);
     state.gesture = {
@@ -267,11 +274,19 @@ boardElement.addEventListener("pointerdown", (event) => {
 boardElement.addEventListener(
   "touchstart",
   (event) => {
-    if (!state.mobileTapMode || !state.puzzle || state.loading || state.revealedBySystem) {
+    state.suppressClick = false;
+    state.lastPointerType = "touch";
+
+    if (!canEditBoard()) {
       return;
     }
 
-    const touch = event.touches[0];
+    if (event.touches.length !== 1) {
+      state.gesture = null;
+      return;
+    }
+
+    const touch = event.changedTouches[0] ?? event.touches[0];
     const cell = event.target.closest(".cell");
 
     if (!touch || !cell || !boardElement.contains(cell)) {
@@ -325,7 +340,12 @@ boardElement.addEventListener(
   (event) => {
     const gesture = state.gesture;
 
-    if (!gesture || gesture.mode !== "touch-mark" || !state.mobileTapMode) {
+    if (!gesture || gesture.mode !== "touch-mark") {
+      return;
+    }
+
+    if (event.touches.length !== 1) {
+      state.gesture = null;
       return;
     }
 
@@ -388,7 +408,7 @@ boardElement.addEventListener("contextmenu", (event) => {
 });
 
 newGameButton.addEventListener("click", () => {
-  maybeCloseSettingsOnMobile();
+  closeSettingsForGameAction();
   void buildPuzzle(state.size, { mode: "random" });
 });
 
@@ -407,14 +427,16 @@ resetButton.addEventListener("click", () => {
   state.lastScoreSummary = null;
   restartTimer();
   render();
-  maybeCloseSettingsOnMobile();
+  closeSettingsForGameAction();
 });
 
 hintButton.addEventListener("click", () => {
   if (
     !state.puzzle ||
     state.loading ||
+    state.error ||
     state.revealedBySystem ||
+    state.analysis?.solved ||
     hasPendingLineGrace()
   ) {
     return;
@@ -422,9 +444,8 @@ hintButton.addEventListener("click", () => {
 
   const previousHint = state.hint;
   state.hint = findHint(state.puzzle, state.board, state.analysis);
-  state.settingsTab = "status";
+  activateSettingsTab("status", { focus: true });
   renderHint();
-  renderSettings();
   renderBoard(
     collectAffectedCellKeys({
       previousHint,
@@ -434,7 +455,7 @@ hintButton.addEventListener("click", () => {
 });
 
 revealButton.addEventListener("click", () => {
-  if (!state.puzzle || state.loading) {
+  if (!state.puzzle || state.loading || state.error || state.analysis?.solved) {
     return;
   }
 
@@ -448,20 +469,30 @@ revealButton.addEventListener("click", () => {
   state.lastScoreSummary = null;
   stopTimer();
   render();
-  maybeCloseSettingsOnMobile();
+  closeSettingsForGameAction();
 });
 
 sizeSelect.addEventListener("change", () => {
   state.size = Number(sizeSelect.value);
   state.levelPickerSize = state.size;
   state.scoreSize = state.size;
-  maybeCloseSettingsOnMobile();
+  closeSettingsForGameAction();
   void buildPuzzle(state.size, { mode: "random" });
 });
 
 document.addEventListener("keydown", (event) => {
   if (event.key === "Escape" && state.settingsOpen) {
+    event.preventDefault();
     setSettingsOpen(false);
+    return;
+  }
+
+  if (state.settingsOpen && event.key === "Tab") {
+    trapSettingsFocus(event);
+    return;
+  }
+
+  if (state.settingsOpen || event.altKey || event.ctrlKey || event.metaKey) {
     return;
   }
 
@@ -479,15 +510,102 @@ document.addEventListener("keydown", (event) => {
   }
 });
 
-mobileTapQuery.addEventListener("change", (event) => {
-  state.mobileTapMode = event.matches;
-});
-
 void buildPuzzle(state.size, { mode: "random" });
 
 function setSettingsOpen(nextOpen) {
-  state.settingsOpen = nextOpen;
+  const shouldOpen = Boolean(nextOpen);
+
+  if (state.settingsOpen === shouldOpen) {
+    return;
+  }
+
+  if (shouldOpen) {
+    state.settingsReturnFocus =
+      document.activeElement instanceof HTMLElement ? document.activeElement : settingsButton;
+  }
+
+  state.settingsOpen = shouldOpen;
   renderSettings();
+
+  if (shouldOpen) {
+    settingsCloseButton.focus();
+    return;
+  }
+
+  const returnFocus = state.settingsReturnFocus;
+  state.settingsReturnFocus = null;
+
+  if (returnFocus instanceof HTMLElement && returnFocus.isConnected) {
+    returnFocus.focus();
+  } else {
+    settingsButton.focus();
+  }
+}
+
+function activateSettingsTab(tabName, options = {}) {
+  if (!settingsTabButtons.some((button) => button.dataset.settingsTabButton === tabName)) {
+    return;
+  }
+
+  state.settingsTab = tabName;
+  renderSettings();
+
+  if (options.focus) {
+    settingsTabButtons
+      .find((button) => button.dataset.settingsTabButton === tabName)
+      ?.focus();
+  }
+}
+
+function handleSettingsTabKeydown(event, currentButton) {
+  const handledKeys = new Set(["ArrowLeft", "ArrowRight", "Home", "End"]);
+
+  if (!handledKeys.has(event.key)) {
+    return;
+  }
+
+  event.preventDefault();
+  const currentIndex = settingsTabButtons.indexOf(currentButton);
+  let nextIndex = currentIndex;
+
+  if (event.key === "Home") {
+    nextIndex = 0;
+  } else if (event.key === "End") {
+    nextIndex = settingsTabButtons.length - 1;
+  } else {
+    const direction = event.key === "ArrowRight" ? 1 : -1;
+    nextIndex = (currentIndex + direction + settingsTabButtons.length) % settingsTabButtons.length;
+  }
+
+  activateSettingsTab(settingsTabButtons[nextIndex].dataset.settingsTabButton, {
+    focus: true,
+  });
+}
+
+function trapSettingsFocus(event) {
+  const focusable = [...settingsDrawer.querySelectorAll(SETTINGS_FOCUSABLE_SELECTOR)].filter(
+    (element) => !element.closest("[hidden]") && element.getClientRects().length > 0,
+  );
+
+  if (focusable.length === 0) {
+    event.preventDefault();
+    settingsDrawer.focus();
+    return;
+  }
+
+  const first = focusable[0];
+  const last = focusable[focusable.length - 1];
+
+  if (event.shiftKey && document.activeElement === first) {
+    event.preventDefault();
+    last.focus();
+  } else if (!event.shiftKey && document.activeElement === last) {
+    event.preventDefault();
+    first.focus();
+  } else if (!settingsDrawer.contains(document.activeElement)) {
+    event.preventDefault();
+    first.focus();
+  }
 }
 
 function toggleHelpLanguage() {
@@ -495,8 +613,8 @@ function toggleHelpLanguage() {
   renderHelpToggle();
 }
 
-function maybeCloseSettingsOnMobile() {
-  if (mobileTapQuery.matches) {
+function closeSettingsForGameAction() {
+  if (state.settingsOpen) {
     setSettingsOpen(false);
   }
 }
@@ -514,6 +632,7 @@ async function buildPuzzle(size, options = {}) {
   const seed = mode === "random" ? options.seed ?? randomSeed() : null;
 
   state.loading = true;
+  state.error = null;
   state.size = size;
   state.mode = mode;
   state.levelIndex = levelIndex;
@@ -523,16 +642,20 @@ async function buildPuzzle(size, options = {}) {
   state.gesture = null;
   state.hint = null;
   state.suppressClick = false;
+  state.lastPointerType = null;
+  state.focusedCell = { row: 0, column: 0 };
   state.revealedBySystem = false;
   state.lastScoreSummary = null;
   state.puzzle = null;
   state.board = [];
   state.analysis = null;
   stopTimer();
+  state.elapsedMs = 0;
+  state.clockStartedAt = 0;
   boardElement.classList.add("is-loading");
   boardElement.style.setProperty("--size", String(size));
   boardElement.replaceChildren();
-  state.renderedPuzzleSeed = null;
+  state.renderedPuzzle = null;
   state.cellElements = [];
   state.tokenElements = [];
   state.warningElements = [];
@@ -550,7 +673,7 @@ async function buildPuzzle(size, options = {}) {
     restartTimer();
   } catch (error) {
     stopTimer();
-    statusText.textContent =
+    state.error =
       error instanceof Error ? error.message : "Unable to create puzzle.";
   } finally {
     state.loading = false;
@@ -560,6 +683,12 @@ async function buildPuzzle(size, options = {}) {
 }
 
 function render() {
+  boardElement.setAttribute("aria-busy", String(state.loading));
+  boardElement.classList.toggle("is-unavailable", Boolean(state.error));
+  boardMessage.hidden = !state.error;
+  boardMessage.textContent = state.error
+    ? `Unable to create the puzzle. ${state.error} Choose another puzzle from Menu to retry.`
+    : "";
   renderTools();
   renderSessionMeta();
   renderHelpToggle();
@@ -578,6 +707,8 @@ function render() {
 }
 
 function renderControlStates() {
+  const isFinished = Boolean(state.analysis?.solved || state.revealedBySystem);
+
   sizeSelect.value = String(state.size);
   sizeSelect.disabled = state.loading;
   newGameButton.disabled = state.loading;
@@ -585,17 +716,19 @@ function renderControlStates() {
   hintButton.disabled =
     state.loading ||
     !state.puzzle ||
-    state.revealedBySystem ||
+    isFinished ||
     hasPendingLineGrace();
-  revealButton.disabled = state.loading || !state.puzzle || state.revealedBySystem;
+  revealButton.disabled = state.loading || !state.puzzle || isFinished;
 }
 
 function renderTools() {
+  const isFinished = Boolean(state.analysis?.solved || state.revealedBySystem);
+
   for (const button of toolButtons) {
     const isActive = button.dataset.tool === state.activeTool;
     button.classList.toggle("is-active", isActive);
     button.setAttribute("aria-pressed", String(isActive));
-    button.disabled = state.loading || state.revealedBySystem;
+    button.disabled = state.loading || isFinished;
   }
 }
 
@@ -609,7 +742,6 @@ function renderHelpToggle() {
   helpToggleText.textContent = copy.text;
   helpToggleText.setAttribute("lang", copy.lang);
   helpToggleButton.title = copy.title;
-  helpToggleButton.setAttribute("aria-label", copy.title);
 }
 
 function renderSettings() {
@@ -617,10 +749,15 @@ function renderSettings() {
   settingsLayer.hidden = !state.settingsOpen;
   document.body.classList.toggle("has-settings-open", state.settingsOpen);
 
+  for (const element of settingsInertElements) {
+    element.toggleAttribute("inert", state.settingsOpen);
+  }
+
   for (const button of settingsTabButtons) {
     const isActive = button.dataset.settingsTabButton === state.settingsTab;
     button.classList.toggle("is-active", isActive);
     button.setAttribute("aria-selected", String(isActive));
+    button.tabIndex = isActive ? 0 : -1;
   }
 
   for (const panel of settingsPanels) {
@@ -631,7 +768,6 @@ function renderSettings() {
 function renderStats() {
   if (!state.puzzle || !state.analysis) {
     updateText(queensStats, "0 / 0");
-    updateText(regionsStats, "0 / 0");
     updateText(conflictsStats, "0");
     updateText(seedLabels, "Seed: --");
     return;
@@ -641,74 +777,84 @@ function renderStats() {
     queensStats,
     `${state.analysis.queenCount} / ${state.puzzle.size}`,
   );
-  updateText(
-    regionsStats,
-    `${state.analysis.completedRegions} / ${state.puzzle.size}`,
-  );
   updateText(conflictsStats, String(state.analysis.conflicts.size));
   updateText(seedLabels, `Seed: ${formatSeed(state.puzzle.seed)}`);
 }
 
 function renderStatus() {
   if (state.loading) {
-    statusText.textContent =
+    updateStatus(
       state.mode === "fixed"
         ? "Loading a saved level..."
-        : "Loading a saved random board...";
+        : "Loading a saved random board...",
+    );
+    return;
+  }
+
+  if (state.error) {
+    updateStatus(`Unable to create the puzzle. ${state.error}`);
     return;
   }
 
   if (!state.puzzle || !state.analysis) {
-    statusText.textContent = "No puzzle loaded yet.";
+    updateStatus("No puzzle loaded yet.");
     return;
   }
 
   if (state.revealedBySystem) {
-    statusText.textContent =
-      "Game ended. Every queen is revealed now. Reset to replay this board or create a new puzzle.";
+    updateStatus(
+      "Game ended. Every queen is revealed now. Reset to replay this board or create a new puzzle.",
+    );
     return;
   }
 
   if (state.analysis.solved) {
     const solvedText = `Solved in ${formatDuration(state.elapsedMs)}.`;
     const scoreText = describeScoreSummary(state.lastScoreSummary);
-    statusText.textContent = scoreText ? `${solvedText} ${scoreText}` : solvedText;
+    updateStatus(scoreText ? `${solvedText} ${scoreText}` : solvedText);
     return;
   }
 
   if (state.analysis.conflicts.size > 0) {
     const conflictWord =
       state.analysis.conflicts.size === 1 ? "conflict" : "conflicts";
-    statusText.textContent =
+    updateStatus(
       `${state.analysis.conflicts.size} ${conflictWord} detected. ` +
-      "Queens cannot share a row, column, region, or touching diagonal.";
+        "Queens cannot share a row, column, region, or touching diagonal.",
+    );
     return;
   }
 
   if (hasPendingLineGrace()) {
-    statusText.textContent =
-      "Tap that last dot again to turn it into a queen, or pause a moment to confirm the line warning.";
+    updateStatus(
+      "Tap that last dot again to turn it into a queen, or pause a moment to confirm the line warning.",
+    );
     return;
   }
 
-  if (
-    hasVisibleLineViolations(state.analysis)
-  ) {
-    statusText.textContent =
-      "A row or column is impossible right now. Clear some marks or extra queens so every line can still hold exactly one queen.";
+  if (hasVisiblePlacementViolations(state.analysis)) {
+    updateStatus(
+      "A row, column, or colored region is impossible right now. Clear some marks or extra queens so every group can still hold exactly one queen.",
+    );
     return;
   }
 
   const remaining = state.puzzle.size - state.analysis.queenCount;
   const queenWord = remaining === 1 ? "queen" : "queens";
-  statusText.textContent =
-    `Place ${remaining} more ${queenWord}. Use marks to track cells that are no longer possible.`;
+  updateStatus(
+    `Place ${remaining} more ${queenWord}. Use marks to track cells that are no longer possible.`,
+  );
 }
 
 function renderHint() {
   if (state.loading) {
     hintText.textContent =
       "Hint waits for the next board. Once the puzzle loads, it will inspect your queens and marks.";
+    return;
+  }
+
+  if (state.error) {
+    hintText.textContent = "Fix the puzzle-loading error before requesting a hint.";
     return;
   }
 
@@ -721,6 +867,11 @@ function renderHint() {
   if (state.revealedBySystem) {
     hintText.textContent =
       "The solution is already revealed. Start a new puzzle or reset this one to play again.";
+    return;
+  }
+
+  if (state.analysis?.solved) {
+    hintText.textContent = "Puzzle solved. Reset or start a new puzzle to play again.";
     return;
   }
 
@@ -753,6 +904,7 @@ function renderLevelPicker() {
     `${sizeLabel} · ${solvedCount} / ${levelCount} cleared · ${currentLevelText}`;
 
   playSelectedRandomButton.textContent = `Play random ${sizeLabel}`;
+  playSelectedRandomButton.disabled = state.loading;
   playSelectedRandomButton.classList.toggle(
     "primary",
     state.mode === "random" && state.size === state.levelPickerSize,
@@ -774,6 +926,7 @@ function renderLevelPicker() {
     button.className = "level-button";
     button.dataset.levelSize = String(state.levelPickerSize);
     button.dataset.levelIndex = String(levelIndex);
+    button.disabled = state.loading;
     button.classList.toggle("is-current", isCurrent);
     button.classList.toggle("is-cleared", bestMs !== null);
     button.setAttribute(
@@ -848,6 +1001,10 @@ function renderBoard(cellKeys = null) {
   ensureBoardStructure();
   boardElement.classList.toggle("is-solved", Boolean(state.analysis?.solved));
   boardElement.style.setProperty("--size", String(state.puzzle.size));
+  boardElement.style.setProperty(
+    "--minimum-board-width",
+    `${state.puzzle.size * 26}px`,
+  );
 
   if (cellKeys instanceof Set) {
     for (const key of cellKeys) {
@@ -870,7 +1027,7 @@ function syncCellByKey(key) {
 
 function ensureBoardStructure() {
   if (
-    state.renderedPuzzleSeed === state.puzzle.seed &&
+    state.renderedPuzzle === state.puzzle &&
     state.cellElements.length === state.puzzle.size
   ) {
     return;
@@ -886,8 +1043,19 @@ function ensureBoardStructure() {
   state.warningElements = Array.from({ length: state.puzzle.size }, () =>
     Array(state.puzzle.size),
   );
+  state.focusedCell = {
+    row: Math.min(state.focusedCell.row, state.puzzle.size - 1),
+    column: Math.min(state.focusedCell.column, state.puzzle.size - 1),
+  };
+  boardElement.setAttribute("aria-rowcount", String(state.puzzle.size));
+  boardElement.setAttribute("aria-colcount", String(state.puzzle.size));
 
   for (let row = 0; row < state.puzzle.size; row += 1) {
+    const boardRowElement = document.createElement("div");
+    boardRowElement.className = "board-row";
+    boardRowElement.setAttribute("role", "row");
+    boardRowElement.setAttribute("aria-rowindex", String(row + 1));
+
     for (let column = 0; column < state.puzzle.size; column += 1) {
       const region = state.puzzle.regions[row][column];
       const topRegion = row > 0 ? state.puzzle.regions[row - 1][column] : -1;
@@ -912,8 +1080,14 @@ function ensureBoardStructure() {
 
       cell.type = "button";
       cell.className = "cell";
+      cell.setAttribute("role", "gridcell");
+      cell.setAttribute("aria-rowindex", String(row + 1));
+      cell.setAttribute("aria-colindex", String(column + 1));
       cell.dataset.row = String(row);
       cell.dataset.column = String(column);
+      cell.dataset.region = String(region);
+      cell.tabIndex =
+        row === state.focusedCell.row && column === state.focusedCell.column ? 0 : -1;
       cell.style.setProperty("--tone", state.puzzle.palette[region]);
       cell.style.setProperty("--edge", state.puzzle.outlinePalette[region]);
       cell.style.setProperty("--stroke-top", hasTopBoundary ? "3px" : "1px");
@@ -949,16 +1123,18 @@ function ensureBoardStructure() {
       token.className = "token";
       cell.append(warning);
       cell.append(token);
-      fragment.append(cell);
+      boardRowElement.append(cell);
 
       state.cellElements[row][column] = cell;
       state.warningElements[row][column] = warning;
       state.tokenElements[row][column] = token;
     }
+
+    fragment.append(boardRowElement);
   }
 
   boardElement.replaceChildren(fragment);
-  state.renderedPuzzleSeed = state.puzzle.seed;
+  state.renderedPuzzle = state.puzzle;
 }
 
 function syncCell(row, column) {
@@ -972,43 +1148,162 @@ function syncCell(row, column) {
 
   const stateValue = state.board[row][column];
   const conflictKey = cellKey(row, column);
+  const region = state.puzzle.regions[row][column];
   const displayValue =
     state.revealedBySystem && state.puzzle.queens[row] === column
       ? CELL_STATE.QUEEN
       : stateValue;
   const hasLineViolation =
     isVisibleRowViolation(row, state.analysis) ||
-    isVisibleColumnViolation(column, state.analysis);
+    isVisibleColumnViolation(column, state.analysis) ||
+    isVisibleRegionViolation(region, state.analysis);
+  const hasConflict = Boolean(state.analysis?.conflicts.has(conflictKey));
+  const isHintTarget = state.hint?.row === row && state.hint?.column === column;
+  const isHintSource =
+    state.hint?.blocker?.row === row && state.hint?.blocker?.column === column;
+  const isHintMark = state.hint?.type === "not-queen" && isHintTarget;
 
-  cell.disabled = state.loading || state.revealedBySystem;
+  const isReadOnly = state.revealedBySystem || Boolean(state.analysis?.solved);
+  cell.disabled = state.loading;
+  cell.setAttribute("aria-disabled", String(state.loading || isReadOnly));
   cell.classList.toggle("is-queen", displayValue === CELL_STATE.QUEEN);
   cell.classList.toggle("is-mark", displayValue === CELL_STATE.MARK);
-  cell.classList.toggle(
-    "is-conflict",
-    Boolean(state.analysis?.conflicts.has(conflictKey)),
-  );
+  cell.classList.toggle("is-conflict", hasConflict);
   cell.classList.toggle("is-revealed", state.revealedBySystem);
-  cell.classList.toggle(
-    "is-hint-target",
-    state.hint?.row === row && state.hint?.column === column,
-  );
-  cell.classList.toggle(
-    "is-hint-source",
-    state.hint?.blocker?.row === row && state.hint?.blocker?.column === column,
-  );
-  cell.classList.toggle(
-    "is-hint-mark",
-    state.hint?.type === "not-queen" &&
-      state.hint?.row === row &&
-      state.hint?.column === column,
-  );
+  cell.classList.toggle("is-hint-target", isHintTarget);
+  cell.classList.toggle("is-hint-source", isHintSource);
+  cell.classList.toggle("is-hint-mark", isHintMark);
   warning.classList.toggle("is-visible", hasLineViolation);
+  cell.setAttribute("aria-invalid", String(hasConflict || hasLineViolation));
+  cell.setAttribute(
+    "aria-label",
+    describeCellState({
+      row,
+      column,
+      region,
+      displayValue,
+      hasConflict,
+      hasLineViolation,
+      isHintTarget,
+      isHintSource,
+    }),
+  );
 
   updateToken(token, displayValue);
 }
 
+function canEditBoard() {
+  return Boolean(
+    state.puzzle &&
+      state.analysis &&
+      !state.loading &&
+      !state.error &&
+      !state.revealedBySystem &&
+      !state.analysis.solved,
+  );
+}
+
+function describeCellState({
+  row,
+  column,
+  region,
+  displayValue,
+  hasConflict,
+  hasLineViolation,
+  isHintTarget,
+  isHintSource,
+}) {
+  const valueLabel =
+    displayValue === CELL_STATE.QUEEN
+      ? state.revealedBySystem
+        ? "revealed queen"
+        : "queen"
+      : displayValue === CELL_STATE.MARK
+        ? "marked"
+        : "empty";
+  const details = [];
+
+  if (hasConflict) {
+    details.push("conflict");
+  }
+
+  if (hasLineViolation) {
+    details.push("part of an impossible row, column, or region");
+  }
+
+  if (isHintTarget) {
+    details.push(state.hint?.type === "must-queen" ? "hint: place a queen" : "hint target");
+  }
+
+  if (isHintSource) {
+    details.push("hint source");
+  }
+
+  return [
+    `Row ${row + 1}, column ${column + 1}, region ${region + 1}`,
+    valueLabel,
+    ...details,
+  ].join(", ");
+}
+
+function handleBoardKeydown(event) {
+  const cell = event.target.closest(".cell");
+
+  if (!cell || !boardElement.contains(cell)) {
+    return;
+  }
+
+  const row = Number(cell.dataset.row);
+  const column = Number(cell.dataset.column);
+  let nextRow = row;
+  let nextColumn = column;
+
+  if (event.key === "ArrowUp") {
+    nextRow -= 1;
+  } else if (event.key === "ArrowDown") {
+    nextRow += 1;
+  } else if (event.key === "ArrowLeft") {
+    nextColumn -= 1;
+  } else if (event.key === "ArrowRight") {
+    nextColumn += 1;
+  } else if (event.key === "Home") {
+    nextColumn = 0;
+  } else if (event.key === "End") {
+    nextColumn = state.puzzle.size - 1;
+  } else {
+    return;
+  }
+
+  event.preventDefault();
+  setFocusedCell(
+    Math.min(state.puzzle.size - 1, Math.max(0, nextRow)),
+    Math.min(state.puzzle.size - 1, Math.max(0, nextColumn)),
+    { focus: true },
+  );
+}
+
+function setFocusedCell(row, column, options = {}) {
+  const previous = state.cellElements[state.focusedCell.row]?.[state.focusedCell.column];
+  const next = state.cellElements[row]?.[column];
+
+  if (!next) {
+    return;
+  }
+
+  if (previous && previous !== next) {
+    previous.tabIndex = -1;
+  }
+
+  state.focusedCell = { row, column };
+  next.tabIndex = 0;
+
+  if (options.focus) {
+    next.focus();
+  }
+}
+
 function applyTool(row, column, tool) {
-  if (!state.puzzle || state.loading || state.revealedBySystem) {
+  if (!canEditBoard()) {
     return;
   }
 
@@ -1020,7 +1315,7 @@ function applyTool(row, column, tool) {
 }
 
 function applyMobileTap(row, column) {
-  if (!state.puzzle || state.loading || state.revealedBySystem) {
+  if (!canEditBoard()) {
     return;
   }
 
@@ -1087,6 +1382,10 @@ function resolveToolValue(current, tool) {
 }
 
 function commitBoardChange(row, column, nextValue, options = {}) {
+  if (!canEditBoard()) {
+    return;
+  }
+
   const current = state.board[row][column];
 
   if (nextValue === current) {
@@ -1110,12 +1409,15 @@ function commitBoardChange(row, column, nextValue, options = {}) {
     allowFinalMarkGrace: options.allowFinalMarkGrace,
   });
 
-  if (!previousAnalysis?.solved && state.analysis.solved) {
+  const didSolve = !previousAnalysis?.solved && state.analysis.solved;
+
+  if (didSolve) {
     stopTimer();
     state.lastScoreSummary = recordBestTime();
   }
 
   renderSessionMeta();
+  renderTools();
   renderStats();
   renderStatus();
   renderHint();
@@ -1126,15 +1428,19 @@ function commitBoardChange(row, column, nextValue, options = {}) {
     renderScores();
   }
 
-  renderBoard(
-    collectAffectedCellKeys({
-      cells: [[row, column]],
-      previousAnalysis,
-      nextAnalysis: state.analysis,
-      previousHint,
-      nextHint: state.hint,
-    }),
-  );
+  if (didSolve) {
+    renderBoard();
+  } else {
+    renderBoard(
+      collectAffectedCellKeys({
+        cells: [[row, column]],
+        previousAnalysis,
+        nextAnalysis: state.analysis,
+        previousHint,
+        nextHint: state.hint,
+      }),
+    );
+  }
 }
 
 function markDraggedCell(row, column) {
@@ -1172,14 +1478,21 @@ function createPendingLineGrace({
     !previousAnalysis?.columnViolations.has(column) &&
     state.analysis.columnCounts[column] === 0 &&
     isMarkedOnlyColumn(column);
+  const region = state.puzzle.regions[row][column];
+  const shouldSuppressRegion =
+    state.analysis.regionViolations.has(region) &&
+    !previousAnalysis?.regionViolations.has(region) &&
+    state.analysis.regionCounts[region] === 0 &&
+    isMarkedOnlyRegion(region);
 
-  if (!shouldSuppressRow && !shouldSuppressColumn) {
+  if (!shouldSuppressRow && !shouldSuppressColumn && !shouldSuppressRegion) {
     return null;
   }
 
   const pending = {
     row: shouldSuppressRow ? row : null,
     column: shouldSuppressColumn ? column : null,
+    region: shouldSuppressRegion ? region : null,
     timeoutId: 0,
   };
 
@@ -1224,7 +1537,22 @@ function isMarkedOnlyColumn(column) {
   return true;
 }
 
-function hasVisibleLineViolations(analysis = state.analysis) {
+function isMarkedOnlyRegion(region) {
+  for (let row = 0; row < state.board.length; row += 1) {
+    for (let column = 0; column < state.board.length; column += 1) {
+      if (
+        state.puzzle.regions[row][column] === region &&
+        state.board[row][column] !== CELL_STATE.MARK
+      ) {
+        return false;
+      }
+    }
+  }
+
+  return true;
+}
+
+function hasVisiblePlacementViolations(analysis = state.analysis) {
   if (!analysis) {
     return false;
   }
@@ -1237,6 +1565,12 @@ function hasVisibleLineViolations(analysis = state.analysis) {
 
   for (const column of analysis.columnViolations ?? []) {
     if (isVisibleColumnViolation(column, analysis)) {
+      return true;
+    }
+  }
+
+  for (const region of analysis.regionViolations ?? []) {
+    if (isVisibleRegionViolation(region, analysis)) {
       return true;
     }
   }
@@ -1261,6 +1595,12 @@ function isVisibleColumnViolation(column, analysis = state.analysis) {
   );
 }
 
+function isVisibleRegionViolation(region, analysis = state.analysis) {
+  return Boolean(
+    analysis?.regionViolations.has(region) && state.pendingLineGrace?.region !== region,
+  );
+}
+
 function collectGraceAffectedCellKeys(grace) {
   const affected = new Set();
 
@@ -1277,6 +1617,16 @@ function collectGraceAffectedCellKeys(grace) {
   if (Number.isInteger(grace.column)) {
     for (let row = 0; row < state.puzzle.size; row += 1) {
       affected.add(cellKey(row, grace.column));
+    }
+  }
+
+  if (Number.isInteger(grace.region)) {
+    for (let row = 0; row < state.puzzle.size; row += 1) {
+      for (let column = 0; column < state.puzzle.size; column += 1) {
+        if (state.puzzle.regions[row][column] === grace.region) {
+          affected.add(cellKey(row, column));
+        }
+      }
     }
   }
 
@@ -1591,6 +1941,16 @@ function updateText(elements, value) {
   }
 }
 
+function updateStatus(value) {
+  if (statusText.textContent !== value) {
+    statusText.textContent = value;
+  }
+
+  if (gameAnnouncer.textContent !== value) {
+    gameAnnouncer.textContent = value;
+  }
+}
+
 function updateToken(token, displayValue) {
   const nextDisplay =
     displayValue === CELL_STATE.QUEEN
@@ -1633,8 +1993,8 @@ function collectAffectedCellKeys({
 
   addConflictKeys(affected, previousAnalysis?.conflicts);
   addConflictKeys(affected, nextAnalysis?.conflicts);
-  addLineViolationKeys(affected, previousAnalysis);
-  addLineViolationKeys(affected, nextAnalysis);
+  addPlacementViolationKeys(affected, previousAnalysis);
+  addPlacementViolationKeys(affected, nextAnalysis);
   addHintKeys(affected, previousHint);
   addHintKeys(affected, nextHint);
 
@@ -1669,7 +2029,7 @@ function addHintKeys(affected, hint) {
   }
 }
 
-function addLineViolationKeys(affected, analysis) {
+function addPlacementViolationKeys(affected, analysis) {
   if (!analysis || !state.puzzle) {
     return;
   }
@@ -1683,6 +2043,16 @@ function addLineViolationKeys(affected, analysis) {
   for (const column of analysis.columnViolations ?? []) {
     for (let row = 0; row < state.puzzle.size; row += 1) {
       affected.add(cellKey(row, column));
+    }
+  }
+
+  for (const region of analysis.regionViolations ?? []) {
+    for (let row = 0; row < state.puzzle.size; row += 1) {
+      for (let column = 0; column < state.puzzle.size; column += 1) {
+        if (state.puzzle.regions[row][column] === region) {
+          affected.add(cellKey(row, column));
+        }
+      }
     }
   }
 }

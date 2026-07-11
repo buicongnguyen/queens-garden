@@ -15,7 +15,7 @@
       href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,700&family=Space+Grotesk:wght@400;500;700&display=swap"
       rel="stylesheet"
     />
-    <link rel="stylesheet" href="./styles.css" />
+    <link rel="stylesheet" href="./styles.css?v=0.2.4" />
   </head>
   <body>
     <main class="shell">
@@ -82,15 +82,18 @@
             class="help-toggle"
             type="button"
             aria-live="polite"
-            title="Double tap or double click to switch language"
+            title="Switch instructions to Vietnamese"
           >
             <span class="help-toggle-text" id="help-toggle-text">
-              VI: Di động chạm chấm, chạm lại đặt hậu, vuốt để đánh dấu. PC: bấm, chuột phải kéo. Chạm đôi để EN.
+              EN: Touch once to mark, again for a queen; swipe to mark. Mouse: click or right-drag. Select for VI.
             </span>
           </button>
 
+          <p id="game-announcer" class="sr-only" aria-live="polite" aria-atomic="true"></p>
+
           <div class="board-shell">
-            <div class="board" id="board" aria-label="Queen puzzle board"></div>
+            <p class="board-message" id="board-message" hidden></p>
+            <div class="board" id="board" role="grid" aria-label="Queen puzzle board"></div>
           </div>
 
           <div class="settings-layer" id="settings-layer" hidden>
@@ -99,16 +102,20 @@
               class="settings-backdrop"
               type="button"
               aria-label="Close settings"
+              aria-hidden="true"
+              tabindex="-1"
             ></button>
             <section
               id="settings-drawer"
               class="settings-drawer"
-              aria-label="Game settings"
+              role="dialog"
+              aria-modal="true"
+              aria-labelledby="settings-title"
             >
               <div class="settings-head">
                 <div>
                   <p class="field-label">Puzzle menu</p>
-                  <h2 class="settings-title">Garden controls</h2>
+                  <h2 class="settings-title" id="settings-title">Garden controls</h2>
                 </div>
                 <button
                   id="settings-close-button"
@@ -122,8 +129,10 @@
               <div class="settings-tabs" role="tablist" aria-label="Settings sections">
                 <button
                   class="settings-tab-button is-active"
+                  id="settings-tab-game"
                   type="button"
                   role="tab"
+                  aria-controls="settings-panel-game"
                   aria-selected="true"
                   data-settings-tab-button="game"
                 >
@@ -131,43 +140,61 @@
                 </button>
                 <button
                   class="settings-tab-button"
+                  id="settings-tab-levels"
                   type="button"
                   role="tab"
+                  aria-controls="settings-panel-levels"
                   aria-selected="false"
+                  tabindex="-1"
                   data-settings-tab-button="levels"
                 >
                   Levels
                 </button>
                 <button
                   class="settings-tab-button"
+                  id="settings-tab-status"
                   type="button"
                   role="tab"
+                  aria-controls="settings-panel-status"
                   aria-selected="false"
+                  tabindex="-1"
                   data-settings-tab-button="status"
                 >
                   Status
                 </button>
                 <button
                   class="settings-tab-button"
+                  id="settings-tab-scores"
                   type="button"
                   role="tab"
+                  aria-controls="settings-panel-scores"
                   aria-selected="false"
+                  tabindex="-1"
                   data-settings-tab-button="scores"
                 >
                   Scores
                 </button>
                 <button
                   class="settings-tab-button"
+                  id="settings-tab-guide"
                   type="button"
                   role="tab"
+                  aria-controls="settings-panel-guide"
                   aria-selected="false"
+                  tabindex="-1"
                   data-settings-tab-button="guide"
                 >
                   Guide
                 </button>
               </div>
 
-              <section class="settings-panel" data-settings-panel="game">
+              <section
+                class="settings-panel"
+                id="settings-panel-game"
+                role="tabpanel"
+                aria-labelledby="settings-tab-game"
+                data-settings-panel="game"
+              >
                 <div class="control-group">
                   <label class="field-label" for="size-select">Board size</label>
                   <select id="size-select" class="select-input"></select>
@@ -188,8 +215,8 @@
                 </div>
                 <section class="panel-card settings-tools-card">
                   <div class="panel-head">
-                    <h2>Desktop tools</h2>
-                    <p>Use the buttons below or press Q, X, and E.</p>
+                    <h2>Placement tools</h2>
+                    <p>With a mouse or keyboard, use these buttons or press Q, X, and E.</p>
                   </div>
                   <div class="tool-row settings-tool-row">
                     <button class="tool-button" data-tool="queen" type="button">
@@ -210,7 +237,14 @@
                 </section>
               </section>
 
-              <section class="settings-panel" data-settings-panel="levels" hidden>
+              <section
+                class="settings-panel"
+                id="settings-panel-levels"
+                role="tabpanel"
+                aria-labelledby="settings-tab-levels"
+                data-settings-panel="levels"
+                hidden
+              >
                 <section class="panel-card settings-level-card">
                   <div class="panel-head">
                     <h2>Fixed levels</h2>
@@ -232,7 +266,14 @@
                 </section>
               </section>
 
-              <section class="settings-panel" data-settings-panel="status" hidden>
+              <section
+                class="settings-panel"
+                id="settings-panel-status"
+                role="tabpanel"
+                aria-labelledby="settings-tab-status"
+                data-settings-panel="status"
+                hidden
+              >
                 <div class="status-card settings-card">
                   <p class="status-heading">Status</p>
                   <p class="status-text" id="status-text">
@@ -241,7 +282,7 @@
                 </div>
                 <div class="hint-card settings-card">
                   <p class="status-heading">Hint</p>
-                  <p class="hint-text" id="hint-text">
+                  <p class="hint-text" id="hint-text" aria-live="polite" aria-atomic="true">
                     Hint reads the current queens and marks, then looks for cells
                     that are forced or impossible right now.
                   </p>
@@ -264,7 +305,14 @@
                 </section>
               </section>
 
-              <section class="settings-panel" data-settings-panel="scores" hidden>
+              <section
+                class="settings-panel"
+                id="settings-panel-scores"
+                role="tabpanel"
+                aria-labelledby="settings-tab-scores"
+                data-settings-panel="scores"
+                hidden
+              >
                 <section class="panel-card settings-score-card">
                   <div class="panel-head">
                     <h2>Best times</h2>
@@ -296,15 +344,30 @@
                 </section>
               </section>
 
-              <section class="settings-panel" data-settings-panel="guide" hidden>
+              <section
+                class="settings-panel"
+                id="settings-panel-guide"
+                role="tabpanel"
+                aria-labelledby="settings-tab-guide"
+                data-settings-panel="guide"
+                hidden
+              >
                 <section class="panel-card settings-guide-card">
                   <div class="panel-head">
-                    <h2>Quick help</h2>
-                    <p>Short controls stay on the main screen now.</p>
+                    <h2>How to play</h2>
+                    <p>Every board follows the same four rules.</p>
                   </div>
+                  <ul class="tips-list">
+                    <li>Place exactly one queen in every row.</li>
+                    <li>Place exactly one queen in every column.</li>
+                    <li>Place exactly one queen in every colored region.</li>
+                    <li>Queens cannot touch diagonally.</li>
+                  </ul>
                   <p class="guide-note">
-                    Double tap or double click the tiny help line above the board to
-                    switch Vietnamese and English.
+                    Touch: tap once for a dot, again for a queen, and once more to clear.
+                    Swipe across cells to add several dots. Mouse or keyboard: select
+                    Queen, Mark, or Erase, then activate a cell; arrow keys move around
+                    the board.
                   </p>
                 </section>
               </section>
@@ -314,6 +377,6 @@
       </section>
     </main>
 
-    <script type="module" src="./src/main.js"></script>
+    <script type="module" src="./src/main.js?v=0.2.4"></script>
   </body>
 </html>
