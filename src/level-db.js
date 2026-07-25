@@ -4,7 +4,7 @@ export const LEVEL_DATABASE = {
   "7": [
     {
       "id": "7-01",
-      "seed": 1524490028,
+      "seed": 700017,
       "queens": [
         5,
         2,
@@ -82,7 +82,7 @@ export const LEVEL_DATABASE = {
     },
     {
       "id": "7-02",
-      "seed": 4056229963,
+      "seed": 707936,
       "queens": [
         6,
         0,
@@ -160,7 +160,7 @@ export const LEVEL_DATABASE = {
     },
     {
       "id": "7-03",
-      "seed": 684509057,
+      "seed": 715855,
       "queens": [
         5,
         3,
@@ -238,7 +238,7 @@ export const LEVEL_DATABASE = {
     },
     {
       "id": "7-04",
-      "seed": 1240403414,
+      "seed": 723774,
       "queens": [
         3,
         6,
@@ -316,7 +316,7 @@ export const LEVEL_DATABASE = {
     },
     {
       "id": "7-05",
-      "seed": 2578894097,
+      "seed": 731693,
       "queens": [
         4,
         1,
@@ -394,7 +394,7 @@ export const LEVEL_DATABASE = {
     },
     {
       "id": "7-06",
-      "seed": 2317081792,
+      "seed": 739612,
       "queens": [
         4,
         0,
@@ -472,7 +472,7 @@ export const LEVEL_DATABASE = {
     },
     {
       "id": "7-07",
-      "seed": 2504406195,
+      "seed": 747531,
       "queens": [
         3,
         6,
@@ -550,7 +550,7 @@ export const LEVEL_DATABASE = {
     },
     {
       "id": "7-08",
-      "seed": 2154218424,
+      "seed": 755450,
       "queens": [
         2,
         0,
@@ -628,7 +628,7 @@ export const LEVEL_DATABASE = {
     },
     {
       "id": "7-09",
-      "seed": 3622736296,
+      "seed": 763369,
       "queens": [
         5,
         2,
@@ -706,7 +706,7 @@ export const LEVEL_DATABASE = {
     },
     {
       "id": "7-10",
-      "seed": 23263077,
+      "seed": 771288,
       "queens": [
         4,
         0,
@@ -784,7 +784,7 @@ export const LEVEL_DATABASE = {
     },
     {
       "id": "7-11",
-      "seed": 3531133685,
+      "seed": 779207,
       "queens": [
         2,
         4,
@@ -862,7 +862,7 @@ export const LEVEL_DATABASE = {
     },
     {
       "id": "7-12",
-      "seed": 125140873,
+      "seed": 787126,
       "queens": [
         1,
         5,
@@ -940,7 +940,7 @@ export const LEVEL_DATABASE = {
     },
     {
       "id": "7-13",
-      "seed": 3546814748,
+      "seed": 795045,
       "queens": [
         1,
         3,
@@ -1018,7 +1018,7 @@ export const LEVEL_DATABASE = {
     },
     {
       "id": "7-14",
-      "seed": 3078947020,
+      "seed": 802964,
       "queens": [
         0,
         4,
@@ -1096,7 +1096,7 @@ export const LEVEL_DATABASE = {
     },
     {
       "id": "7-15",
-      "seed": 1471027473,
+      "seed": 810883,
       "queens": [
         5,
         3,
@@ -1174,7 +1174,7 @@ export const LEVEL_DATABASE = {
     },
     {
       "id": "7-16",
-      "seed": 3257209335,
+      "seed": 818802,
       "queens": [
         0,
         5,
@@ -1252,7 +1252,7 @@ export const LEVEL_DATABASE = {
     },
     {
       "id": "7-17",
-      "seed": 3528132683,
+      "seed": 826721,
       "queens": [
         6,
         4,
@@ -1330,7 +1330,7 @@ export const LEVEL_DATABASE = {
     },
     {
       "id": "7-18",
-      "seed": 3408117177,
+      "seed": 834640,
       "queens": [
         0,
         6,
@@ -1408,7 +1408,7 @@ export const LEVEL_DATABASE = {
     },
     {
       "id": "7-19",
-      "seed": 3888300996,
+      "seed": 842559,
       "queens": [
         4,
         2,
@@ -1486,7 +1486,7 @@ export const LEVEL_DATABASE = {
     },
     {
       "id": "7-20",
-      "seed": 3735841964,
+      "seed": 850478,
       "queens": [
         0,
         3,
@@ -1566,7 +1566,7 @@ export const LEVEL_DATABASE = {
   "8": [
     {
       "id": "8-01",
-      "seed": 2398660572,
+      "seed": 800017,
       "queens": [
         1,
         7,
@@ -1662,7 +1662,7 @@ export const LEVEL_DATABASE = {
     },
     {
       "id": "8-02",
-      "seed": 455217003,
+      "seed": 807936,
       "queens": [
         5,
         1,
@@ -1758,7 +1758,7 @@ export const LEVEL_DATABASE = {
     },
     {
       "id": "8-03",
-      "seed": 1735429793,
+      "seed": 815855,
       "queens": [
         3,
         7,
@@ -1854,7 +1854,7 @@ export const LEVEL_DATABASE = {
     },
     {
       "id": "8-04",
-      "seed": 3595907096,
+      "seed": 823774,
       "queens": [
         4,
         2,
@@ -1950,7 +1950,7 @@ export const LEVEL_DATABASE = {
     },
     {
       "id": "8-05",
-      "seed": 1006273284,
+      "seed": 831693,
       "queens": [
         1,
         6,
@@ -2046,7 +2046,7 @@ export const LEVEL_DATABASE = {
     },
     {
       "id": "8-06",
-      "seed": 2020852122,
+      "seed": 839612,
       "queens": [
         4,
         7,
@@ -2142,7 +2142,7 @@ export const LEVEL_DATABASE = {
     },
     {
       "id": "8-07",
-      "seed": 1177748325,
+      "seed": 847531,
       "queens": [
         5,
         2,
@@ -2238,7 +2238,7 @@ export const LEVEL_DATABASE = {
     },
     {
       "id": "8-08",
-      "seed": 1986966437,
+      "seed": 855450,
       "queens": [
         6,
         4,
@@ -2334,7 +2334,7 @@ export const LEVEL_DATABASE = {
     },
     {
       "id": "8-09",
-      "seed": 955533836,
+      "seed": 863369,
       "queens": [
         5,
         2,
@@ -2430,7 +2430,7 @@ export const LEVEL_DATABASE = {
     },
     {
       "id": "8-10",
-      "seed": 2359271464,
+      "seed": 871288,
       "queens": [
         0,
         6,
@@ -2526,7 +2526,7 @@ export const LEVEL_DATABASE = {
     },
     {
       "id": "8-11",
-      "seed": 2481932417,
+      "seed": 879207,
       "queens": [
         7,
         2,
@@ -2622,7 +2622,7 @@ export const LEVEL_DATABASE = {
     },
     {
       "id": "8-12",
-      "seed": 4200581056,
+      "seed": 887126,
       "queens": [
         6,
         2,
@@ -2718,7 +2718,7 @@ export const LEVEL_DATABASE = {
     },
     {
       "id": "8-13",
-      "seed": 1348653282,
+      "seed": 895045,
       "queens": [
         4,
         1,
@@ -2814,7 +2814,7 @@ export const LEVEL_DATABASE = {
     },
     {
       "id": "8-14",
-      "seed": 3078034006,
+      "seed": 902964,
       "queens": [
         7,
         3,
@@ -2910,7 +2910,7 @@ export const LEVEL_DATABASE = {
     },
     {
       "id": "8-15",
-      "seed": 1238982777,
+      "seed": 910883,
       "queens": [
         0,
         2,
@@ -3006,7 +3006,7 @@ export const LEVEL_DATABASE = {
     },
     {
       "id": "8-16",
-      "seed": 1990758515,
+      "seed": 918802,
       "queens": [
         2,
         4,
@@ -3102,7 +3102,7 @@ export const LEVEL_DATABASE = {
     },
     {
       "id": "8-17",
-      "seed": 3611921030,
+      "seed": 926721,
       "queens": [
         5,
         3,
@@ -3198,7 +3198,7 @@ export const LEVEL_DATABASE = {
     },
     {
       "id": "8-18",
-      "seed": 1541234613,
+      "seed": 934640,
       "queens": [
         6,
         0,
@@ -3294,7 +3294,7 @@ export const LEVEL_DATABASE = {
     },
     {
       "id": "8-19",
-      "seed": 3676646084,
+      "seed": 942559,
       "queens": [
         1,
         5,
@@ -3390,7 +3390,7 @@ export const LEVEL_DATABASE = {
     },
     {
       "id": "8-20",
-      "seed": 4232206312,
+      "seed": 950478,
       "queens": [
         5,
         7,
@@ -3488,7 +3488,7 @@ export const LEVEL_DATABASE = {
   "9": [
     {
       "id": "9-01",
-      "seed": 763458498,
+      "seed": 900017,
       "queens": [
         1,
         4,
@@ -3604,7 +3604,7 @@ export const LEVEL_DATABASE = {
     },
     {
       "id": "9-02",
-      "seed": 2987486359,
+      "seed": 907936,
       "queens": [
         0,
         2,
@@ -3720,7 +3720,7 @@ export const LEVEL_DATABASE = {
     },
     {
       "id": "9-03",
-      "seed": 3661019725,
+      "seed": 915855,
       "queens": [
         0,
         4,
@@ -3836,7 +3836,7 @@ export const LEVEL_DATABASE = {
     },
     {
       "id": "9-04",
-      "seed": 900149391,
+      "seed": 923774,
       "queens": [
         6,
         2,
@@ -3952,7 +3952,7 @@ export const LEVEL_DATABASE = {
     },
     {
       "id": "9-05",
-      "seed": 1877593033,
+      "seed": 931693,
       "queens": [
         3,
         1,
@@ -4068,7 +4068,7 @@ export const LEVEL_DATABASE = {
     },
     {
       "id": "9-06",
-      "seed": 4065261745,
+      "seed": 939612,
       "queens": [
         5,
         3,
@@ -4184,7 +4184,7 @@ export const LEVEL_DATABASE = {
     },
     {
       "id": "9-07",
-      "seed": 4180364705,
+      "seed": 947531,
       "queens": [
         8,
         6,
@@ -4300,7 +4300,7 @@ export const LEVEL_DATABASE = {
     },
     {
       "id": "9-08",
-      "seed": 605761714,
+      "seed": 955450,
       "queens": [
         0,
         3,
@@ -4416,7 +4416,7 @@ export const LEVEL_DATABASE = {
     },
     {
       "id": "9-09",
-      "seed": 546863079,
+      "seed": 963369,
       "queens": [
         5,
         3,
@@ -4532,7 +4532,7 @@ export const LEVEL_DATABASE = {
     },
     {
       "id": "9-10",
-      "seed": 3318817366,
+      "seed": 971288,
       "queens": [
         3,
         1,
@@ -4648,7 +4648,7 @@ export const LEVEL_DATABASE = {
     },
     {
       "id": "9-11",
-      "seed": 3858721632,
+      "seed": 979207,
       "queens": [
         5,
         7,
@@ -4764,7 +4764,7 @@ export const LEVEL_DATABASE = {
     },
     {
       "id": "9-12",
-      "seed": 4286014882,
+      "seed": 987126,
       "queens": [
         8,
         1,
@@ -4880,7 +4880,7 @@ export const LEVEL_DATABASE = {
     },
     {
       "id": "9-13",
-      "seed": 1460902814,
+      "seed": 995045,
       "queens": [
         8,
         6,
@@ -4996,7 +4996,7 @@ export const LEVEL_DATABASE = {
     },
     {
       "id": "9-14",
-      "seed": 2479234806,
+      "seed": 1002964,
       "queens": [
         0,
         4,
@@ -5112,7 +5112,7 @@ export const LEVEL_DATABASE = {
     },
     {
       "id": "9-15",
-      "seed": 797959230,
+      "seed": 1010883,
       "queens": [
         0,
         4,
@@ -5228,7 +5228,7 @@ export const LEVEL_DATABASE = {
     },
     {
       "id": "9-16",
-      "seed": 2643119381,
+      "seed": 1018802,
       "queens": [
         7,
         4,
@@ -5344,7 +5344,7 @@ export const LEVEL_DATABASE = {
     },
     {
       "id": "9-17",
-      "seed": 3307129093,
+      "seed": 1026721,
       "queens": [
         2,
         4,
@@ -5460,7 +5460,7 @@ export const LEVEL_DATABASE = {
     },
     {
       "id": "9-18",
-      "seed": 2515842133,
+      "seed": 1034640,
       "queens": [
         2,
         8,
@@ -5576,7 +5576,7 @@ export const LEVEL_DATABASE = {
     },
     {
       "id": "9-19",
-      "seed": 2655276969,
+      "seed": 1042559,
       "queens": [
         4,
         8,
@@ -5692,7 +5692,7 @@ export const LEVEL_DATABASE = {
     },
     {
       "id": "9-20",
-      "seed": 1062650142,
+      "seed": 1050478,
       "queens": [
         8,
         3,

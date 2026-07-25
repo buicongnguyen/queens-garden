@@ -1,7 +1,8 @@
-import {
-  LEVEL_DATABASE,
-  LEVELS_PER_SIZE as DATABASE_LEVELS_PER_SIZE,
-} from "./level-db.js?v=0.2.4";
+const BUILD_LEVEL_DATABASE =
+  globalThis[Symbol.for("queens-garden.build-level-database")] === true;
+const { LEVEL_DATABASE } = BUILD_LEVEL_DATABASE
+  ? { LEVEL_DATABASE: Object.freeze({}) }
+  : await import("./level-db.js?v=0.2.5");
 
 export const CELL_STATE = Object.freeze({
   EMPTY: 0,
@@ -10,7 +11,8 @@ export const CELL_STATE = Object.freeze({
 });
 
 export const SUPPORTED_SIZES = Object.freeze([7, 8, 9, 10, 11, 12, 13, 14, 15]);
-export const LEVELS_PER_SIZE = DATABASE_LEVELS_PER_SIZE;
+export const PROCEDURAL_SIZES = Object.freeze([7, 8, 9]);
+export const LEVELS_PER_SIZE = 20;
 
 const ORTHOGONAL_STEPS = Object.freeze([
   [1, 0],
@@ -261,22 +263,6 @@ export function formatSeed(seed) {
   return normalizeSeed(seed).toString(36).toUpperCase();
 }
 
-export function createFixedLevelSeed(size, levelIndex) {
-  if (!SUPPORTED_SIZES.includes(size)) {
-    throw new Error(`Unsupported board size: ${size}`);
-  }
-
-  if (
-    !Number.isInteger(levelIndex) ||
-    levelIndex < 1 ||
-    levelIndex > getLevelCount(size)
-  ) {
-    throw new Error(`Unsupported level index: ${levelIndex}`);
-  }
-
-  return size * 1000 + (levelIndex - 1) * 17;
-}
-
 export function createEmptyBoard(size) {
   return Array.from({ length: size }, () => Array(size).fill(CELL_STATE.EMPTY));
 }
@@ -377,6 +363,13 @@ function buildDatabasePuzzle(size, entry, seed, paletteSeed) {
 export function createProceduralPuzzle(size, seed = randomSeed()) {
   if (!SUPPORTED_SIZES.includes(size)) {
     throw new Error(`Unsupported board size: ${size}`);
+  }
+
+  if (!PROCEDURAL_SIZES.includes(size)) {
+    throw new Error(
+      `Procedural generation supports sizes ${PROCEDURAL_SIZES.join(", ")}. ` +
+        "Use a saved level for larger boards.",
+    );
   }
 
   const baseSeed = normalizeSeed(seed);
@@ -765,6 +758,14 @@ export function findHint(puzzle, board, analysis = null) {
     };
   }
 
+  if (conflictsWithKnownUniqueSolution(puzzle, board)) {
+    return {
+      type: "dead-end",
+      message:
+        "Your current queens and marks rule out this puzzle's unique solution. Remove a wrong queen or restore a marked solution cell before asking for another hint.",
+    };
+  }
+
   const deduction = deriveLogicalDeductions(puzzle, board);
 
   if (!deduction.consistent) {
@@ -807,6 +808,36 @@ export function findHint(puzzle, board, analysis = null) {
   };
 }
 
+function conflictsWithKnownUniqueSolution(puzzle, board) {
+  if (
+    puzzle.solutionCount !== 1 ||
+    !Array.isArray(puzzle.queens) ||
+    puzzle.queens.length !== puzzle.size
+  ) {
+    return false;
+  }
+
+  for (let row = 0; row < puzzle.size; row += 1) {
+    const solutionColumn = puzzle.queens[row];
+    const boardRow = board[row];
+
+    if (!boardRow || boardRow[solutionColumn] === CELL_STATE.MARK) {
+      return true;
+    }
+
+    for (let column = 0; column < puzzle.size; column += 1) {
+      if (
+        boardRow[column] === CELL_STATE.QUEEN &&
+        column !== solutionColumn
+      ) {
+        return true;
+      }
+    }
+  }
+
+  return false;
+}
+
 export function solutionBoard(puzzle) {
   const board = createEmptyBoard(puzzle.size);
 
@@ -832,8 +863,8 @@ function createPresetPuzzle(size, seed) {
   return {
     size,
     seed,
-    queens: variant.queens,
-    regions: variant.regions,
+    queens: [...variant.queens],
+    regions: variant.regions.map((row) => [...row]),
     palette: palette.fills,
     outlinePalette: palette.edges,
     solutionCount: 1,
@@ -870,22 +901,51 @@ function buildPresetVariantsForSize(size) {
   const parsedLayouts = layouts.map((layout) => parsePresetLayout(layout));
   const variants = [];
 
-  for (let transformIndex = 0; transformIndex < 8; transformIndex += 1) {
-    for (let layoutIndex = 0; layoutIndex < layouts.length; layoutIndex += 1) {
-      variants.push(
-        Object.freeze({
-          regions: transformRegions(parsedLayouts[layoutIndex], transformIndex),
-          queens: transformQueenColumns(
-            solutions[layoutIndex],
-            size,
-            transformIndex,
-          ),
-        }),
+  for (let layoutIndex = 0; layoutIndex < layouts.length; layoutIndex += 1) {
+    const regions = parsedLayouts[layoutIndex];
+    const queens = solutions[layoutIndex];
+    const puzzle = { size, regions };
+
+    if (
+      findDisconnectedRegion(regions) ||
+      !validateSolutionColumns(puzzle, queens) ||
+      countRegionSolutions(size, regions, 2) !== 1
+    ) {
+      continue;
+    }
+
+    addPresetTransforms(variants, regions, queens, size);
+  }
+
+  if (variants.length === 0) {
+    const fallbackEntry = LEVEL_DATABASE[String(size)]?.[0];
+
+    if (fallbackEntry) {
+      addPresetTransforms(
+        variants,
+        fallbackEntry.regions,
+        fallbackEntry.queens,
+        size,
       );
     }
   }
 
   return variants;
+}
+
+function addPresetTransforms(variants, regions, queens, size) {
+  for (let transformIndex = 0; transformIndex < 8; transformIndex += 1) {
+    const transformedRegions = transformRegions(regions, transformIndex);
+
+    variants.push(
+      Object.freeze({
+        regions: Object.freeze(
+          transformedRegions.map((row) => Object.freeze(row)),
+        ),
+        queens: transformQueenColumns(queens, size, transformIndex),
+      }),
+    );
+  }
 }
 
 function parsePresetLayout(layout) {

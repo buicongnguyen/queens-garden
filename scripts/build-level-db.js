@@ -1,17 +1,27 @@
-import { writeFile } from "node:fs/promises";
+import { readFile, writeFile } from "node:fs/promises";
 
-import {
+import { normalizeGeneratedText } from "./build-level-utils.js";
+
+const BUILD_LEVEL_DATABASE = Symbol.for("queens-garden.build-level-database");
+globalThis[BUILD_LEVEL_DATABASE] = true;
+const engine = await import("../src/engine.js");
+delete globalThis[BUILD_LEVEL_DATABASE];
+
+const {
+  PROCEDURAL_SIZES,
   SUPPORTED_SIZES,
   createProceduralPuzzle,
   createPuzzle,
   countSolutions,
   findDisconnectedRegion,
   validateSolutionColumns,
-} from "../src/engine.js";
+} = engine;
 
 const DATABASE_LEVELS_PER_SIZE = 20;
-const PROCEDURAL_DATABASE_SIZES = new Set([7, 8, 9]);
+const MAX_PROCEDURAL_ATTEMPTS = 5000;
+const PROCEDURAL_DATABASE_SIZES = new Set(PROCEDURAL_SIZES);
 const OUTPUT_PATH = new URL("../src/level-db.js", import.meta.url);
+const CHECK_ONLY = process.argv.includes("--check");
 
 const database = {};
 
@@ -24,32 +34,50 @@ for (const size of SUPPORTED_SIZES) {
 }
 
 const output = `${serializeDatabaseModule(database)}\n`;
-await writeFile(OUTPUT_PATH, output, "utf8");
-console.log(`saved level database to ${OUTPUT_PATH.pathname}`);
+
+if (CHECK_ONLY) {
+  const existing = await readFile(OUTPUT_PATH, "utf8");
+
+  if (normalizeGeneratedText(existing) !== normalizeGeneratedText(output)) {
+    throw new Error(
+      "Generated level database is stale. Run `npm run build:levels` and commit the result.",
+    );
+  }
+
+  console.log("generated level database matches the committed file");
+} else {
+  await writeFile(OUTPUT_PATH, output, "utf8");
+  console.log(`saved level database to ${OUTPUT_PATH.pathname}`);
+}
 
 function buildProceduralEntries(size, levelCount) {
   const entries = [];
   const seenLayouts = new Set();
   let attempt = 0;
 
-  while (entries.length < levelCount) {
+  while (
+    entries.length < levelCount &&
+    attempt < MAX_PROCEDURAL_ATTEMPTS
+  ) {
     const seed = size * 100000 + attempt * 7919 + 17;
+    attempt += 1;
     const puzzle = createProceduralPuzzle(size, seed);
     assertValidPuzzle(puzzle, `procedural size ${size} seed ${seed}`);
     const layoutKey = serializeRegions(puzzle.regions);
 
     if (seenLayouts.has(layoutKey)) {
-      attempt += 1;
       continue;
     }
 
     seenLayouts.add(layoutKey);
     entries.push(createDatabaseEntry(size, entries.length + 1, puzzle));
-    attempt += 1;
+  }
 
-    if (attempt > 5000) {
-      throw new Error(`Could not build ${levelCount} procedural levels for size ${size}.`);
-    }
+  if (entries.length < levelCount) {
+    throw new Error(
+      `Could not build ${levelCount} procedural levels for size ${size} ` +
+        `within ${MAX_PROCEDURAL_ATTEMPTS} attempts.`,
+    );
   }
 
   return entries;

@@ -1,5 +1,6 @@
 import {
   LEVELS_PER_SIZE,
+  PROCEDURAL_SIZES,
   countSolutions,
   createFixedLevelPuzzle,
   createProceduralPuzzle,
@@ -8,8 +9,6 @@ import {
   SUPPORTED_SIZES,
   validateSolutionColumns,
 } from "../src/engine.js";
-
-const PROCEDURAL_SIZES = [7, 8, 9];
 
 for (const size of SUPPORTED_SIZES) {
   const levelCount = getLevelCount(size);

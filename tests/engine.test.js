@@ -5,13 +5,17 @@ import {
   CELL_STATE,
   SUPPORTED_SIZES,
   analyzePlayerBoard,
+  countSolutions,
   createEmptyBoard,
   createFixedLevelPuzzle,
+  createPuzzle,
   createProceduralPuzzle,
   createRandomLevelPuzzle,
   findHint,
+  findDisconnectedRegion,
   formatSeed,
   solutionBoard,
+  validateSolutionColumns,
 } from "../src/engine.js";
 
 test("every saved size exposes a solved, conflict-free board", () => {
@@ -62,6 +66,23 @@ test("a conflicting board asks the player to resolve conflicts before hinting", 
   board[0][1] = CELL_STATE.QUEEN;
 
   assert.equal(findHint(puzzle, board).type, "resolve-conflicts");
+});
+
+test("hints reject globally impossible queens and marks on unique puzzles", () => {
+  const puzzle = createFixedLevelPuzzle(7, 1);
+  const wrongQueenBoard = createEmptyBoard(7);
+  wrongQueenBoard[0][3] = CELL_STATE.QUEEN;
+
+  assert.equal(
+    analyzePlayerBoard(puzzle, wrongQueenBoard).conflicts.size,
+    0,
+    "the regression fixture must be locally conflict-free",
+  );
+  assert.equal(findHint(puzzle, wrongQueenBoard).type, "dead-end");
+
+  const markedSolutionBoard = createEmptyBoard(7);
+  markedSolutionBoard[0][puzzle.queens[0]] = CELL_STATE.MARK;
+  assert.equal(findHint(puzzle, markedSolutionBoard).type, "dead-end");
 });
 
 test("forced row hints identify the exact missing queen for every size", () => {
@@ -155,6 +176,40 @@ test("procedural puzzles preserve the caller seed", () => {
   assert.deepEqual(replay.queens, puzzle.queens);
   assert.deepEqual(replay.regions, puzzle.regions);
   assert.deepEqual(replay.palette, puzzle.palette);
+});
+
+test("preset puzzles are valid for every size and do not leak cached state", () => {
+  for (const size of SUPPORTED_SIZES) {
+    for (let seed = 0; seed < 8; seed += 1) {
+      const puzzle = createPuzzle(size, seed, { source: "preset" });
+
+      assert.equal(findDisconnectedRegion(puzzle.regions), null);
+      assert.equal(validateSolutionColumns(puzzle, puzzle.queens), true);
+    }
+
+    const puzzle = createPuzzle(size, 0, { source: "preset" });
+    assert.equal(
+      countSolutions({ ...puzzle, solutionCount: null }, 2),
+      1,
+      `${size}x${size} preset should be unique`,
+    );
+  }
+
+  const first = createPuzzle(8, 0, { source: "preset" });
+  const second = createPuzzle(8, 0, { source: "preset" });
+  assert.notEqual(first.regions, second.regions);
+  assert.notEqual(first.regions[0], second.regions[0]);
+
+  const original = second.regions[0][0];
+  first.regions[0][0] = 255;
+  assert.equal(second.regions[0][0], original);
+});
+
+test("large procedural requests fail quickly instead of blocking the UI thread", () => {
+  assert.throws(
+    () => createProceduralPuzzle(10, 1),
+    /supports sizes 7, 8, 9/,
+  );
 });
 
 function createTestPuzzle(regions) {

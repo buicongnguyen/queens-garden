@@ -10,7 +10,15 @@ import {
   getLevelCount,
   randomSeed,
   solutionBoard,
-} from "./engine.js?v=0.2.4";
+} from "./engine.js?v=0.2.5";
+import {
+  CELL_ACTIVATION_MODE,
+  createEmptyScoreData,
+  hasScrollableOverflow,
+  mergeScoreData,
+  normalizeScoreData,
+  resolveCellActivation,
+} from "./ui-logic.js?v=0.2.5";
 
 const QUEEN_ICON_PATH = "./assets/queen-token-192.png";
 const CELL_GRID_LINE = "rgba(255, 255, 255, 0.42)";
@@ -19,6 +27,7 @@ const MOBILE_FINAL_MARK_GRACE_MS = 320;
 
 const sizeSelect = document.querySelector("#size-select");
 const boardElement = document.querySelector("#board");
+const boardShell = document.querySelector(".board-shell");
 const boardMessage = document.querySelector("#board-message");
 const newGameButton = document.querySelector("#new-game-button");
 const resetButton = document.querySelector("#reset-button");
@@ -71,17 +80,22 @@ const SETTINGS_FOCUSABLE_SELECTOR = [
 const HELP_COPY = Object.freeze({
   vi: {
     text:
-      "VI: Chạm một lần để đánh dấu, lần nữa đặt hậu; vuốt để đánh dấu. Chuột: bấm hoặc kéo phải. Chọn để chuyển EN.",
+      "VI: Chạm để đánh dấu rồi đặt hậu; vuốt khi bảng vừa màn hình, cuộn bảng lớn. Chuột: bấm hoặc kéo phải. Chọn để chuyển EN.",
     title: "Switch instructions to English",
     lang: "vi",
   },
   en: {
     text:
-      "EN: Touch once to mark, again for a queen; swipe to mark. Mouse: click or right-drag. Select for VI.",
+      "EN: Tap to mark then place a queen; swipe when the board fits, scroll larger boards. Mouse: click or right-drag. Select for VI.",
     title: "Switch instructions to Vietnamese",
     lang: "en",
   },
 });
+const SCORE_LEVEL_COUNTS = Object.freeze(
+  Object.fromEntries(
+    SUPPORTED_SIZES.map((size) => [String(size), getLevelCount(size)]),
+  ),
+);
 
 const state = {
   puzzle: null,
@@ -228,13 +242,19 @@ boardElement.addEventListener("click", (event) => {
   state.lastPointerType = null;
   setFocusedCell(row, column);
 
-  if (pointerType === "touch" && !event.shiftKey) {
+  const activation = resolveCellActivation({
+    eventDetail: event.detail,
+    pointerType,
+    shiftKey: event.shiftKey,
+    activeTool: state.activeTool,
+  });
+
+  if (activation.mode === CELL_ACTIVATION_MODE.TOUCH_CYCLE) {
     applyMobileTap(row, column);
     return;
   }
 
-  const quickTool = event.shiftKey ? "mark" : state.activeTool;
-  applyTool(row, column, quickTool);
+  applyTool(row, column, activation.tool);
 });
 
 boardElement.addEventListener("keydown", handleBoardKeydown);
@@ -282,7 +302,7 @@ boardElement.addEventListener(
     }
 
     if (event.touches.length !== 1) {
-      state.gesture = null;
+      cancelGestureForMultiTouch();
       return;
     }
 
@@ -294,11 +314,17 @@ boardElement.addEventListener(
     }
 
     state.gesture = {
-      mode: "touch-mark",
+      mode: boardElement.classList.contains("is-scrollable")
+        ? "touch-scroll"
+        : "touch-mark",
       pointerId: touch.identifier,
       startKey: cellKey(Number(cell.dataset.row), Number(cell.dataset.column)),
       lastKey: cellKey(Number(cell.dataset.row), Number(cell.dataset.column)),
+      startClientX: touch.clientX,
+      startClientY: touch.clientY,
       moved: false,
+      changedKeys: new Set(),
+      previousHint: state.hint,
     };
   },
   { passive: true },
@@ -308,6 +334,11 @@ boardElement.addEventListener("pointermove", (event) => {
   const gesture = state.gesture;
 
   if (!gesture || gesture.pointerId !== event.pointerId) {
+    return;
+  }
+
+  if (gesture.mode === "right-mark" && (event.buttons & 2) === 0) {
+    cancelActiveGesture();
     return;
   }
 
@@ -340,12 +371,15 @@ boardElement.addEventListener(
   (event) => {
     const gesture = state.gesture;
 
-    if (!gesture || gesture.mode !== "touch-mark") {
+    if (
+      !gesture ||
+      (gesture.mode !== "touch-mark" && gesture.mode !== "touch-scroll")
+    ) {
       return;
     }
 
     if (event.touches.length !== 1) {
-      state.gesture = null;
+      cancelGestureForMultiTouch();
       return;
     }
 
@@ -354,6 +388,17 @@ boardElement.addEventListener(
     );
 
     if (!touch) {
+      return;
+    }
+
+    if (gesture.mode === "touch-scroll") {
+      if (
+        Math.abs(touch.clientX - gesture.startClientX) > 8 ||
+        Math.abs(touch.clientY - gesture.startClientY) > 8
+      ) {
+        gesture.moved = true;
+      }
+
       return;
     }
 
@@ -396,6 +441,19 @@ boardElement.addEventListener("pointercancel", finishGesture);
 boardElement.addEventListener("lostpointercapture", finishGesture);
 boardElement.addEventListener("touchend", finishTouchGesture, { passive: true });
 boardElement.addEventListener("touchcancel", finishTouchGesture, { passive: true });
+window.addEventListener("blur", cancelActiveGesture);
+document.addEventListener("visibilitychange", () => {
+  if (document.visibilityState === "hidden") {
+    cancelActiveGesture();
+  }
+});
+window.addEventListener("resize", syncBoardOverflowMode);
+
+if ("ResizeObserver" in globalThis) {
+  const boardResizeObserver = new ResizeObserver(syncBoardOverflowMode);
+  boardResizeObserver.observe(boardShell);
+  boardResizeObserver.observe(boardElement);
+}
 
 boardElement.addEventListener("contextmenu", (event) => {
   const cell = event.target.closest(".cell");
@@ -413,7 +471,7 @@ newGameButton.addEventListener("click", () => {
 });
 
 resetButton.addEventListener("click", () => {
-  if (!state.puzzle || state.loading) {
+  if (!state.puzzle || !state.analysis || state.loading || state.error) {
     return;
   }
 
@@ -487,7 +545,13 @@ document.addEventListener("keydown", (event) => {
     return;
   }
 
-  if (state.settingsOpen && event.key === "Tab") {
+  if (
+    state.settingsOpen &&
+    event.key === "Tab" &&
+    !event.altKey &&
+    !event.ctrlKey &&
+    !event.metaKey
+  ) {
     trapSettingsFocus(event);
     return;
   }
@@ -507,6 +571,32 @@ document.addEventListener("keydown", (event) => {
   } else if (key === "e") {
     state.activeTool = "erase";
     renderTools();
+  }
+});
+
+window.addEventListener("storage", (event) => {
+  if (event.key !== SCORE_STORAGE_KEY) {
+    return;
+  }
+
+  try {
+    const incoming = parseScoreData(event.newValue);
+    const merged = mergeScoreData(
+      SCORE_LEVEL_COUNTS,
+      state.scoreData,
+      incoming,
+    );
+    const needsConvergence =
+      JSON.stringify(merged) !== JSON.stringify(incoming);
+
+    state.scoreData = merged;
+    renderScoreViewsPreservingFocus();
+
+    if (needsConvergence) {
+      void persistScoreData();
+    }
+  } catch {
+    // Ignore malformed writes from another tab.
   }
 });
 
@@ -558,6 +648,10 @@ function activateSettingsTab(tabName, options = {}) {
 }
 
 function handleSettingsTabKeydown(event, currentButton) {
+  if (event.altKey || event.ctrlKey || event.metaKey) {
+    return;
+  }
+
   const handledKeys = new Set(["ArrowLeft", "ArrowRight", "Home", "End"]);
 
   if (!handledKeys.has(event.key)) {
@@ -584,7 +678,10 @@ function handleSettingsTabKeydown(event, currentButton) {
 
 function trapSettingsFocus(event) {
   const focusable = [...settingsDrawer.querySelectorAll(SETTINGS_FOCUSABLE_SELECTOR)].filter(
-    (element) => !element.closest("[hidden]") && element.getClientRects().length > 0,
+    (element) =>
+      element.tabIndex >= 0 &&
+      !element.closest("[hidden]") &&
+      element.getClientRects().length > 0,
   );
 
   if (focusable.length === 0) {
@@ -611,6 +708,72 @@ function trapSettingsFocus(event) {
 function toggleHelpLanguage() {
   state.helpLanguage = state.helpLanguage === "vi" ? "en" : "vi";
   renderHelpToggle();
+  requestAnimationFrame(syncBoardOverflowMode);
+}
+
+function renderScoreViewsPreservingFocus() {
+  const focusTarget = captureDynamicSettingsFocus();
+  renderLevelPicker();
+  renderScores();
+  restoreDynamicSettingsFocus(focusTarget);
+}
+
+function captureDynamicSettingsFocus() {
+  if (!state.settingsOpen || !(document.activeElement instanceof HTMLElement)) {
+    return null;
+  }
+
+  const activeElement = document.activeElement;
+
+  if (activeElement.matches("[data-level-index]")) {
+    return {
+      kind: "level",
+      size: activeElement.dataset.levelSize,
+      index: activeElement.dataset.levelIndex,
+    };
+  }
+
+  if (activeElement.matches("[data-level-size]")) {
+    return {
+      kind: "level-size",
+      size: activeElement.dataset.levelSize,
+    };
+  }
+
+  if (activeElement.matches("[data-score-size]")) {
+    return {
+      kind: "score-size",
+      size: activeElement.dataset.scoreSize,
+    };
+  }
+
+  return null;
+}
+
+function restoreDynamicSettingsFocus(target) {
+  if (!target || !state.settingsOpen) {
+    return;
+  }
+
+  let element = null;
+
+  if (target.kind === "level") {
+    element = [...levelGrid.querySelectorAll("[data-level-index]")].find(
+      (candidate) =>
+        candidate.dataset.levelSize === target.size &&
+        candidate.dataset.levelIndex === target.index,
+    );
+  } else if (target.kind === "level-size") {
+    element = [...levelSizeRow.querySelectorAll("[data-level-size]")].find(
+      (candidate) => candidate.dataset.levelSize === target.size,
+    );
+  } else if (target.kind === "score-size") {
+    element = [...scoreSizeRow.querySelectorAll("[data-score-size]")].find(
+      (candidate) => candidate.dataset.scoreSize === target.size,
+    );
+  }
+
+  element?.focus();
 }
 
 function closeSettingsForGameAction() {
@@ -673,6 +836,9 @@ async function buildPuzzle(size, options = {}) {
     restartTimer();
   } catch (error) {
     stopTimer();
+    state.puzzle = null;
+    state.board = [];
+    state.analysis = null;
     state.error =
       error instanceof Error ? error.message : "Unable to create puzzle.";
   } finally {
@@ -712,13 +878,21 @@ function renderControlStates() {
   sizeSelect.value = String(state.size);
   sizeSelect.disabled = state.loading;
   newGameButton.disabled = state.loading;
-  resetButton.disabled = state.loading || !state.puzzle;
+  resetButton.disabled =
+    state.loading || !state.puzzle || !state.analysis || Boolean(state.error);
   hintButton.disabled =
     state.loading ||
     !state.puzzle ||
+    !state.analysis ||
+    Boolean(state.error) ||
     isFinished ||
     hasPendingLineGrace();
-  revealButton.disabled = state.loading || !state.puzzle || isFinished;
+  revealButton.disabled =
+    state.loading ||
+    !state.puzzle ||
+    !state.analysis ||
+    Boolean(state.error) ||
+    isFinished;
 }
 
 function renderTools() {
@@ -728,7 +902,12 @@ function renderTools() {
     const isActive = button.dataset.tool === state.activeTool;
     button.classList.toggle("is-active", isActive);
     button.setAttribute("aria-pressed", String(isActive));
-    button.disabled = state.loading || isFinished;
+    button.disabled =
+      state.loading ||
+      !state.puzzle ||
+      !state.analysis ||
+      Boolean(state.error) ||
+      isFinished;
   }
 }
 
@@ -1010,6 +1189,7 @@ function renderBoard(cellKeys = null) {
     for (const key of cellKeys) {
       syncCellByKey(key);
     }
+    syncBoardOverflowMode();
     return;
   }
 
@@ -1018,6 +1198,21 @@ function renderBoard(cellKeys = null) {
       syncCell(row, column);
     }
   }
+
+  syncBoardOverflowMode();
+}
+
+function syncBoardOverflowMode() {
+  const isScrollable =
+    Boolean(state.puzzle) &&
+    hasScrollableOverflow({
+      scrollWidth: boardShell.scrollWidth,
+      clientWidth: boardShell.clientWidth,
+      scrollHeight: boardShell.scrollHeight,
+      clientHeight: boardShell.clientHeight,
+    });
+
+  boardElement.classList.toggle("is-scrollable", isScrollable);
 }
 
 function syncCellByKey(key) {
@@ -1253,6 +1448,10 @@ function handleBoardKeydown(event) {
     return;
   }
 
+  if (event.altKey || event.ctrlKey || event.metaKey) {
+    return;
+  }
+
   const row = Number(cell.dataset.row);
   const column = Number(cell.dataset.column);
   let nextRow = row;
@@ -1340,17 +1539,28 @@ function finishGesture(event) {
     return;
   }
 
-  if (gesture.mode === "touch-mark" && gesture.moved) {
+  if (
+    (gesture.mode === "touch-mark" || gesture.mode === "touch-scroll") &&
+    (gesture.moved || event.type === "pointercancel")
+  ) {
     state.suppressClick = true;
+    state.lastPointerType = null;
   }
 
   state.gesture = null;
+
+  if (event.type === "pointercancel") {
+    rollbackTouchMarks(gesture);
+  }
 }
 
 function finishTouchGesture(event) {
   const gesture = state.gesture;
 
-  if (!gesture || gesture.mode !== "touch-mark") {
+  if (
+    !gesture ||
+    (gesture.mode !== "touch-mark" && gesture.mode !== "touch-scroll")
+  ) {
     return;
   }
 
@@ -1364,9 +1574,62 @@ function finishTouchGesture(event) {
 
   if (gesture.moved) {
     state.suppressClick = true;
+    state.lastPointerType = null;
+  } else if (event.type === "touchcancel") {
+    state.lastPointerType = null;
   }
 
   state.gesture = null;
+
+  if (event.type === "touchcancel") {
+    rollbackTouchMarks(gesture);
+  }
+}
+
+function cancelActiveGesture() {
+  const gesture = state.gesture;
+
+  if (!gesture) {
+    return;
+  }
+
+  if (gesture.mode === "touch-mark" || gesture.mode === "touch-scroll") {
+    state.suppressClick = gesture.moved;
+    state.lastPointerType = null;
+  }
+
+  state.gesture = null;
+}
+
+function cancelGestureForMultiTouch() {
+  const gesture = state.gesture;
+  cancelActiveGesture();
+  rollbackTouchMarks(gesture);
+  state.suppressClick = true;
+  state.lastPointerType = null;
+}
+
+function rollbackTouchMarks(gesture) {
+  if (gesture?.mode !== "touch-mark" || gesture.changedKeys.size === 0) {
+    return;
+  }
+
+  clearPendingLineGrace();
+
+  for (const key of gesture.changedKeys) {
+    const [rowText, columnText] = key.split(":");
+    const row = Number(rowText);
+    const column = Number(columnText);
+
+    if (state.board[row]?.[column] === CELL_STATE.MARK) {
+      state.board[row][column] = CELL_STATE.EMPTY;
+    }
+  }
+
+  state.analysis = analyzePlayerBoard(state.puzzle, state.board);
+  state.hint = gesture.previousHint;
+  state.lastScoreSummary = null;
+  render();
 }
 
 function resolveToolValue(current, tool) {
@@ -1446,6 +1709,10 @@ function commitBoardChange(row, column, nextValue, options = {}) {
 function markDraggedCell(row, column) {
   if (state.board[row][column] !== CELL_STATE.EMPTY) {
     return;
+  }
+
+  if (state.gesture?.mode === "touch-mark") {
+    state.gesture.changedKeys.add(cellKey(row, column));
   }
 
   commitBoardChange(row, column, CELL_STATE.MARK);
@@ -1670,6 +1937,11 @@ function renderSizeChipRow(container, dataName, activeSize) {
 
 function recordBestTime() {
   const elapsedMs = Math.max(0, Math.round(state.elapsedMs));
+  state.scoreData = mergeScoreData(
+    SCORE_LEVEL_COUNTS,
+    state.scoreData,
+    loadScoreData(),
+  );
 
   if (state.mode === "fixed" && state.levelIndex) {
     const previousBest = getFixedBestTime(state.size, state.levelIndex);
@@ -1684,7 +1956,7 @@ function recordBestTime() {
       }
 
       state.scoreData.fixed[sizeKey][levelKey] = elapsedMs;
-      persistScoreData();
+      void persistScoreData();
     }
 
     return {
@@ -1702,7 +1974,7 @@ function recordBestTime() {
 
   if (didImprove) {
     state.scoreData.random[String(state.size)] = elapsedMs;
-    persistScoreData();
+    void persistScoreData();
   }
 
   return {
@@ -1826,81 +2098,44 @@ function getFixedSolvedTotal() {
 
 function loadScoreData() {
   try {
-    const raw = window.localStorage.getItem(SCORE_STORAGE_KEY);
-
-    if (!raw) {
-      return createEmptyScoreData();
-    }
-
-    return normalizeScoreData(JSON.parse(raw));
+    return parseScoreData(window.localStorage.getItem(SCORE_STORAGE_KEY));
   } catch {
     return createEmptyScoreData();
   }
 }
 
-function createEmptyScoreData() {
-  return {
-    fixed: {},
-    random: {},
-  };
+function parseScoreData(raw) {
+  if (!raw) {
+    return createEmptyScoreData();
+  }
+
+  return normalizeScoreData(JSON.parse(raw), SCORE_LEVEL_COUNTS);
 }
 
-function normalizeScoreData(candidate) {
-  const normalized = createEmptyScoreData();
-
-  if (!candidate || typeof candidate !== "object") {
-    return normalized;
-  }
-
-  if (candidate.fixed && typeof candidate.fixed === "object") {
-    for (const [sizeKey, levels] of Object.entries(candidate.fixed)) {
-      if (!levels || typeof levels !== "object") {
-        continue;
-      }
-
-      const nextLevels = {};
-
-      for (const [levelKey, value] of Object.entries(levels)) {
-        const safeValue = normalizeBestMs(value);
-
-        if (safeValue !== null) {
-          nextLevels[levelKey] = safeValue;
-        }
-      }
-
-      if (Object.keys(nextLevels).length > 0) {
-        normalized.fixed[sizeKey] = nextLevels;
-      }
-    }
-  }
-
-  if (candidate.random && typeof candidate.random === "object") {
-    for (const [sizeKey, value] of Object.entries(candidate.random)) {
-      const safeValue = normalizeBestMs(value);
-
-      if (safeValue !== null) {
-        normalized.random[sizeKey] = safeValue;
-      }
-    }
-  }
-
-  return normalized;
-}
-
-function normalizeBestMs(value) {
-  if (!Number.isFinite(value) || value < 0) {
-    return null;
-  }
-
-  return Math.round(value);
-}
-
-function persistScoreData() {
+async function persistScoreData() {
   try {
-    window.localStorage.setItem(
-      SCORE_STORAGE_KEY,
-      JSON.stringify(state.scoreData),
-    );
+    const writeMergedScores = () => {
+      state.scoreData = mergeScoreData(
+        SCORE_LEVEL_COUNTS,
+        loadScoreData(),
+        state.scoreData,
+      );
+      window.localStorage.setItem(
+        SCORE_STORAGE_KEY,
+        JSON.stringify(state.scoreData),
+      );
+    };
+
+    if (globalThis.navigator?.locks?.request) {
+      await globalThis.navigator.locks.request(
+        `${SCORE_STORAGE_KEY}-write`,
+        writeMergedScores,
+      );
+    } else {
+      writeMergedScores();
+    }
+
+    renderScoreViewsPreservingFocus();
   } catch {
     // Ignore storage failures so the puzzle still works in private browsing.
   }

@@ -17,6 +17,8 @@ Queen's Garden is a browser puzzle inspired by Queens / 1-star Star Battle:
 - `npm test` checks JavaScript syntax, gameplay logic, hint deductions, seed replay,
   and every saved puzzle.
 - `npm run build:levels` regenerates `src/level-db.js`.
+- `npm run verify` also regenerates the level database in memory and fails if the
+  committed file is stale.
 
 ## Deploy to GitHub Pages
 
@@ -27,6 +29,8 @@ Queen's Garden is a browser puzzle inspired by Queens / 1-star Star Battle:
 ## Notes
 
 - Board sizes now run from `7x7` through `15x15`.
+- Procedural generation is intentionally limited to `7x7` through `9x9`; larger
+  boards use the validated saved database so the browser stays responsive.
 - Random games select from validated saved layouts and use the displayed seed for a reproducible palette and level choice.
 - Each board is checked so it has exactly one solution.
 - Some preset region layouts were adapted from the MIT-licensed community levels in
