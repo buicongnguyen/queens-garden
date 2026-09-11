@@ -34,6 +34,11 @@ jobs:
       - name: Install browser test dependencies
         run: npm ci
 
+      - name: Verify committed renderer bundle
+        run: |
+          npm run build:renderer
+          git diff --exit-code -- src/garden-renderer.js
+
       - name: Install Chromium
         run: npx playwright install --with-deps chromium
 
@@ -64,6 +69,7 @@ jobs:
           cp index.html styles.css .nojekyll THIRD_PARTY_NOTICES.md _site/
           cp -r src _site/
           cp assets/favicon.png assets/queen-token-192.png assets/queen-garden-hero.webp _site/assets/
+          cp assets/queen-token-real.png assets/queen-real.glb _site/assets/
 
       - name: Upload Pages artifact
         uses: actions/upload-pages-artifact@fc324d3547104276b827a68afc52ff2a11cc49c9 # v5.0.0

@@ -1,5 +1,6 @@
 // Shared geometry for the browser preview and Blender-compatible glTF export.
 // Coordinates are glTF Y-up; rows increase along +Z, columns along +X.
+import { QUEEN_MODEL } from './queen-model.js';
 const COLORS = [
   "#e5adad",
   "#e8c394",
@@ -122,60 +123,11 @@ export function buildGardenScene(puzzle, board) {
         box(`Tile R${r + 1} C${c + 1}`, x, 0, z, 0.94, 0.16, 0.94, color, meta),
       );
       if (board[r][c] === 1) {
-        const color = "#fff1c9";
-        meshes.push(
-          box(
-            `Queen base R${r + 1} C${c + 1}`,
-            x,
-            0.17,
-            z,
-            0.55,
-            0.18,
-            0.55,
-            color,
-            meta,
-          ),
-        );
-        meshes.push(
-          box(
-            `Queen stem R${r + 1} C${c + 1}`,
-            x,
-            0.4,
-            z,
-            0.22,
-            0.38,
-            0.22,
-            color,
-            meta,
-          ),
-        );
-        meshes.push(
-          box(
-            `Queen crown R${r + 1} C${c + 1}`,
-            x,
-            0.64,
-            z,
-            0.52,
-            0.14,
-            0.52,
-            color,
-            meta,
-          ),
-        );
-        for (const dx of [-0.18, 0, 0.18])
-          meshes.push(
-            box(
-              `Crown point R${r + 1} C${c + 1} ${dx}`,
-              x + dx,
-              0.79,
-              z,
-              0.09,
-              0.18,
-              0.13,
-              color,
-              meta,
-            ),
-          );
+        for (const template of QUEEN_MODEL) {
+          const positions = template.positions.map((value, i) => value + [x, 0.08, z][i % 3]);
+          meshes.push({ ...template, positions, name: `${template.name} R${r + 1} C${c + 1}`, extras: meta });
+        }
+        continue;
       } else if (board[r][c] === 2) {
         meshes.push(
           box(
@@ -222,8 +174,9 @@ export function gardenGLTF(scene) {
     return index;
   }
   for (const mesh of scene.meshes) {
-    if (!colorMap.has(mesh.color)) {
-      colorMap.set(mesh.color, materials.length);
+    const materialKey = `${mesh.color}/${mesh.metallic ?? 0}/${mesh.roughness ?? 0.36}`;
+    if (!colorMap.has(materialKey)) {
+      colorMap.set(materialKey, materials.length);
       const srgb = [1, 3, 5].map(
         (i) => parseInt(mesh.color.slice(i, i + 2), 16) / 255,
       );
@@ -234,8 +187,8 @@ export function gardenGLTF(scene) {
         name: mesh.color,
         pbrMetallicRoughness: {
           baseColorFactor: [...linear, 1],
-          metallicFactor: 0,
-          roughnessFactor: 0.8,
+          metallicFactor: mesh.metallic ?? 0,
+          roughnessFactor: mesh.roughness ?? 0.36,
         },
         doubleSided: false,
       });
@@ -254,6 +207,12 @@ export function gardenGLTF(scene) {
         Math.max(...mesh.positions.filter((_, i) => i % 3 === axis)),
       ),
     });
+    const attributes = { POSITION: positionAccessor };
+    if (mesh.normals) {
+      attributes.NORMAL = accessors.length;
+      accessors.push({ bufferView: addBuffer(new Float32Array(mesh.normals), 34962),
+        componentType: 5126, count: mesh.normals.length / 3, type: 'VEC3' });
+    }
     const indexAccessor = accessors.length;
     accessors.push({
       bufferView: addBuffer(new Uint16Array(mesh.indices), 34963),
@@ -265,9 +224,9 @@ export function gardenGLTF(scene) {
       name: mesh.name,
       primitives: [
         {
-          attributes: { POSITION: positionAccessor },
+          attributes,
           indices: indexAccessor,
-          material: colorMap.get(mesh.color),
+          material: colorMap.get(materialKey),
         },
       ],
     });
@@ -304,71 +263,4 @@ export function gardenGLTF(scene) {
       },
     ],
   };
-}
-
-export function drawGarden(canvas, scene, angle = 35) {
-  const ctx = canvas.getContext("2d");
-  if (!ctx) return false;
-  const w = canvas.width,
-    h = canvas.height,
-    yaw = (angle * Math.PI) / 180;
-  const scale = Math.min(w / (scene.size * 1.55), h / (scene.size * 1.05));
-  const project = (x, y, z) => {
-    const u = x * Math.cos(yaw) - z * Math.sin(yaw),
-      v = x * Math.sin(yaw) + z * Math.cos(yaw);
-    return [
-      w / 2 + u * scale,
-      h * 0.48 + (v * 0.58 - y * 0.82) * scale,
-      v * 0.82 + y * 0.58,
-    ];
-  };
-  ctx.fillStyle = "#182e29";
-  ctx.fillRect(0, 0, w, h);
-  const faces = [];
-  for (const mesh of scene.meshes) {
-    const p = [];
-    for (let i = 0; i < mesh.positions.length; i += 3)
-      p.push(project(...mesh.positions.slice(i, i + 3)));
-    const quads = [
-      [0, 3, 2, 1],
-      [4, 5, 6, 7],
-      [0, 4, 7, 3],
-      [1, 2, 6, 5],
-      [3, 7, 6, 2],
-      [0, 1, 5, 4],
-    ];
-    for (let i = 0; i < quads.length; i++) {
-      const tri = quads[i].map((index) => p[index]);
-      const [a, b, c] = tri;
-      // Cull back faces and draw each rectangular face once to avoid seams.
-      if ((b[0] - a[0]) * (c[1] - a[1]) - (b[1] - a[1]) * (c[0] - a[0]) >= 0)
-        continue;
-      const shade = [0.7, 0.85, 0.66, 0.82, 1, 0.55][i];
-      const color =
-        "#" +
-        [1, 3, 5]
-          .map((k) =>
-            Math.round(parseInt(mesh.color.slice(k, k + 2), 16) * shade)
-              .toString(16)
-              .padStart(2, "0"),
-          )
-          .join("");
-      faces.push({
-        tri,
-        color,
-        layer: mesh.name === "Garden plinth" ? 0 : 1,
-        depth: tri.reduce((s, v) => s + v[2], 0) / tri.length,
-      });
-    }
-  }
-  faces.sort((a, b) => a.layer - b.layer || a.depth - b.depth);
-  for (const { tri, color } of faces) {
-    ctx.beginPath();
-    ctx.moveTo(tri[0][0], tri[0][1]);
-    for (const point of tri.slice(1)) ctx.lineTo(point[0], point[1]);
-    ctx.closePath();
-    ctx.fillStyle = color;
-    ctx.fill();
-  }
-  return true;
 }

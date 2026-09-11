@@ -20,7 +20,7 @@ import {
   resolveCellActivation,
 } from "./ui-logic.js?v=0.2.5";
 import { createHistory, dailyChallenge, isRecordEligible } from "./play-session.js?v=0.3.0";
-import { buildGardenScene, drawGarden, gardenGLTF } from "./garden-scene.js?v=0.3.0";
+import { buildGardenScene, gardenGLTF } from "./garden-scene.js?v=0.4.0";
 
 const history = createHistory();
 const undoButton = document.querySelector("#undo-button");
@@ -35,7 +35,7 @@ const sceneAngle = document.querySelector("#scene-angle");
 const exportButton = document.querySelector("#export-scene");
 const sceneStatus = document.querySelector("#scene-status");
 
-const QUEEN_ICON_PATH = "./assets/queen-token-192.png";
+const QUEEN_ICON_PATH = "./assets/queen-token-real.png";
 const CELL_GRID_LINE = "rgba(255, 255, 255, 0.42)";
 const SCORE_STORAGE_KEY = "queens-garden-scores-v1";
 const MOBILE_FINAL_MARK_GRACE_MS = 320;
@@ -167,6 +167,7 @@ regionToggle.addEventListener("change", () => {
 });
 sceneDetails.addEventListener("toggle", renderGardenScene);
 sceneAngle.addEventListener("input", renderGardenScene);
+document.querySelector('#scene-detail').addEventListener('change', renderGardenScene);
 exportButton.addEventListener("click", () => {
   if (!state.puzzle || state.loading || state.error) return;
   const data = gardenGLTF(buildGardenScene(state.puzzle, state.board));
@@ -180,12 +181,25 @@ exportButton.addEventListener("click", () => {
   sceneStatus.textContent = "Scene downloaded. In Blender: File → Import → glTF 2.0.";
 });
 
-function renderGardenScene() {
+let sceneCache, sceneCacheKey, rendererPromise, sceneRequest = 0;
+async function renderGardenScene() {
   if (!sceneDetails.open || !state.puzzle || state.loading || state.error) return;
-  const scene = buildGardenScene(state.puzzle, state.board);
-  const drawn = drawGarden(sceneCanvas, scene, Number(sceneAngle.value));
+  const request = ++sceneRequest;
+  const detail = document.querySelector('#scene-detail').checked;
+  const key = detail ? 'queen-detail' : JSON.stringify([state.puzzle.regions, state.puzzle.palette, state.board]);
+  if (sceneCacheKey !== key) {
+    sceneCache = detail ? buildGardenScene({size: 1, regions: [[0]], palette: ['hsl(150 20% 25%)']}, [[1]]) : buildGardenScene(state.puzzle, state.board);
+    sceneCacheKey = key;
+  }
+  let drawn = false;
+  try {
+    rendererPromise ??= import('./garden-renderer.js?v=0.4.0');
+    const { drawGarden } = await rendererPromise;
+    if (request !== sceneRequest || !sceneDetails.open) return;
+    drawn = drawGarden(sceneCanvas, sceneCache, Number(sceneAngle.value));
+  } catch { rendererPromise = null; }
   sceneStatus.textContent = drawn
-    ? "Current position only. Rotate the view, or download it to edit in Blender."
+    ? (detail ? "Queen model study. Download still exports your current game position only." : "Current position only. Rotate the view, or download it to edit in Blender.")
     : "Preview unavailable. You can still download the scene for Blender.";
 }
 

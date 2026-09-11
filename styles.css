@@ -743,10 +743,12 @@ select:focus-visible,
 .region-number { display: none; position: absolute; left: 3px; top: 2px; font-size: clamp(8px, 1.3vw, 12px); color: #182e29; background: #ffffffdd; border-radius: 3px; padding: 0 2px; pointer-events: none; z-index: 3; line-height: 1.25; }
 .show-region-numbers .region-number { display: block; }
 .garden-scene { margin-top: 0.8rem; }
+.settings-drawer:has(.garden-scene[open]) { width: min(840px, calc(100% - 2rem)); }
 .garden-scene summary { cursor: pointer; font-weight: 700; }
 .garden-scene p { font-size: 0.85rem; line-height: 1.5; }
 .garden-scene canvas { display: block; width: 100%; height: auto; border-radius: 12px; margin: 0.7rem 0; }
 .garden-scene input[type="range"] { display: block; width: 100%; margin: 0.7rem 0; }
+.garden-scene label:has(#scene-detail) { display: block; margin: 0.8rem 0; }
 
 .board {
   --size: 7;

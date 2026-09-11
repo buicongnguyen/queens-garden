@@ -15,14 +15,14 @@
       href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,700&family=Space+Grotesk:wght@400;500;700&display=swap"
       rel="stylesheet"
     />
-    <link rel="stylesheet" href="./styles.css?v=0.3.0" />
+    <link rel="stylesheet" href="./styles.css?v=0.4.0" />
   </head>
   <body>
     <main class="shell">
       <section class="hero">
         <div class="hero-copy">
           <div class="hero-seal" aria-hidden="true">
-            <img src="./assets/queen-token-192.png" alt="" />
+            <img src="./assets/queen-token-real.png" alt="" />
           </div>
           <p class="eyebrow">Inspired by Queens and 1-star Star Battle</p>
           <p class="hero-title" aria-hidden="true">Queen's Garden</p>
@@ -231,7 +231,7 @@
                     <button class="tool-button" data-tool="queen" type="button">
                       <img
                         class="tool-icon"
-                        src="./assets/queen-token-192.png"
+                        src="./assets/queen-token-real.png"
                         alt=""
                       />
                       Queen
@@ -251,6 +251,7 @@
                     aria-label="Three-dimensional preview of the current board. The accessible board is available outside this menu."></canvas>
                   <label for="scene-angle">Rotate garden</label>
                   <input id="scene-angle" type="range" min="-180" max="180" value="35" />
+                  <label><input id="scene-detail" type="checkbox" /> Inspect queen model (does not change the game)</label>
                   <button id="export-scene" class="control-button" type="button">Download Blender scene (.gltf)</button>
                   <p id="scene-status" role="status"></p>
                 </details>
@@ -401,6 +402,6 @@
       </section>
     </main>
 
-    <script type="module" src="./src/main.js?v=0.3.0"></script>
+    <script type="module" src="./src/main.js?v=0.4.0"></script>
   </body>
 </html>

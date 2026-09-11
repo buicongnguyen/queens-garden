@@ -8,6 +8,7 @@ export default defineConfig({
     channel: process.env.PLAYWRIGHT_CHANNEL || undefined,
     viewport: { width: 1280, height: 900 },
     reducedMotion: "reduce",
+    launchOptions: { args: ['--use-angle=swiftshader', '--enable-unsafe-swiftshader'] },
     screenshot: "only-on-failure",
   },
   webServer: {

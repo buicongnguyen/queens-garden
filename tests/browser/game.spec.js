@@ -107,6 +107,7 @@ test("3D preview rotates and exports a valid glTF without revealing the answer",
     })
     .click();
   const download = await downloadPromise;
+  await download.saveAs('test-results/current-position.gltf');
   const data = await readFile(await download.path(), "utf8");
   const result = await validator.validateString(data);
   expect(result.issues.numErrors, JSON.stringify(result.issues.messages)).toBe(
@@ -120,6 +121,26 @@ test("3D preview rotates and exports a valid glTF without revealing the answer",
   expect(errors).toEqual([]);
   await page.getByLabel("Rotate garden").fill("35");
   await page.screenshot({ path: "test-results/garden-3d.png" });
+  await page.locator('#scene-detail').check();
+  await expect(page.locator('#scene-status')).toContainText('Queen model study');
+  await page.screenshot({ path: 'test-results/queen-detail.png' });
+});
+
+test('WebGL failure keeps game and scene export available', async ({ page }) => {
+  await page.evaluate(() => {
+    const original = HTMLCanvasElement.prototype.getContext;
+    HTMLCanvasElement.prototype.getContext = function (type, ...args) {
+      return type.startsWith('webgl') ? null : original.call(this, type, ...args);
+    };
+  });
+  await page.getByRole('button', {name: 'Menu', exact: true}).click();
+  await page.getByText('3D garden · Blender export', {exact: true}).click();
+  await expect(page.locator('#scene-status')).toContainText('Preview unavailable');
+  const pending = page.waitForEvent('download');
+  await page.locator('#export-scene').click();
+  const download = await pending;
+  const data = JSON.parse(await readFile(await download.path(), 'utf8'));
+  expect(data.asset.version).toBe('2.0');
 });
 
 test("large mobile board scrolls and controls remain reachable", async ({

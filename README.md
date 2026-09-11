@@ -35,6 +35,16 @@ Queen's Garden is a browser puzzle inspired by Queens / 1-star Star Battle:
 
 ## Notes
 
+- Version 0.4 adds a Blender-modeled porcelain, gold, and jade queen, a Cycles-rendered
+  2D token, and a lazy-loaded Three.js PBR preview with reflections and shadows.
+  Use **Inspect queen model** for a close-up; scene export always uses the real board.
+  WebGL2 is required only for the preview, not gameplay or Blender export.
+- Editable source: `assets/queen-source.blend`; portable model: `assets/queen-real.glb`.
+  Rebuild assets with Blender 4.5: `blender --background --python scripts/create-queen.py`.
+  Rebuild the committed browser bundle with `npm ci` then `npm run build:renderer`.
+  Queen geometry/materials are shared with export; tile bevels and studio lighting
+  are preview presentation effects, not exported scene geometry.
+
 - Undo/Redo treats a swipe or right-drag as one move. Finished games are locked;
   Reset starts a new attempt. Hints flag an attempt as assisted and prevent a
   best-time record. Old records cannot be retroactively classified.
