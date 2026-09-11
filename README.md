@@ -14,6 +14,13 @@ Queen's Garden is a browser puzzle inspired by Queens / 1-star Star Battle:
 
 ## Verify the game
 
+- `npm ci` installs the development-only browser testing tools.
+- `npx playwright install chromium` installs the test browser.
+- `npm run test:browser` checks undo/redo, daily selection, scoring, progression,
+  responsive layout, 3D preview, and validates the downloadable glTF.
+- To use an installed Edge on Windows: set `PLAYWRIGHT_CHANNEL=msedge` in the
+  environment before running the browser tests.
+
 - `npm test` checks JavaScript syntax, gameplay logic, hint deductions, seed replay,
   and every saved puzzle.
 - `npm run build:levels` regenerates `src/level-db.js`.
@@ -27,6 +34,19 @@ Queen's Garden is a browser puzzle inspired by Queens / 1-star Star Battle:
 - The live site is published at `https://buicongnguyen.github.io/queens-garden/`.
 
 ## Notes
+
+- Undo/Redo treats a swipe or right-drag as one move. Finished games are locked;
+  Reset starts a new attempt. Hints flag an attempt as assisted and prevent a
+  best-time record. Old records cannot be retroactively classified.
+- Daily garden is a shared UTC-date-based 7×7 challenge. It cycles through the
+  20 validated layouts and does not count toward random best-time records.
+- Use Region numbers to identify regions without relying on color.
+- Game → 3D garden shows the current position as a rotatable mesh scene. Download
+  its `.gltf` and import it in Blender with File → Import → glTF 2.0. The export
+  has embedded geometry/materials and cell metadata; it does not include the
+  hidden solution. The 2D grid remains the playable board.
+- See [the evaluated implementation plan](docs/IMPROVEMENT_PLAN.md) for design
+  decisions, logic review, validation, and future suggestions.
 
 - Board sizes now run from `7x7` through `15x15`.
 - Procedural generation is intentionally limited to `7x7` through `9x9`; larger

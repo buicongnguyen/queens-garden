@@ -15,7 +15,7 @@
       href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,700&family=Space+Grotesk:wght@400;500;700&display=swap"
       rel="stylesheet"
     />
-    <link rel="stylesheet" href="./styles.css?v=0.2.5" />
+    <link rel="stylesheet" href="./styles.css?v=0.3.0" />
   </head>
   <body>
     <main class="shell">
@@ -90,6 +90,15 @@
           </button>
 
           <p id="game-announcer" class="sr-only" aria-live="polite" aria-atomic="true"></p>
+
+          <div class="play-actions" aria-label="Puzzle actions">
+            <button id="undo-button" class="control-button" type="button" disabled>Undo</button>
+            <button id="redo-button" class="control-button" type="button" disabled>Redo</button>
+            <button id="daily-button" class="control-button" type="button">Daily garden · UTC</button>
+            <label class="region-toggle"><input id="region-numbers" type="checkbox" /> Region numbers</label>
+            <button id="next-level-button" class="control-button primary" type="button" hidden>Next level</button>
+          </div>
+          <p id="completion-message" class="completion-message" role="status" hidden></p>
 
           <div class="board-shell">
             <p class="board-message" id="board-message" hidden></p>
@@ -235,6 +244,16 @@
                     </button>
                   </div>
                 </section>
+                <details id="garden-scene" class="panel-card garden-scene">
+                  <summary>3D garden · Blender export</summary>
+                  <p>Inspect the current position in 3D. Play moves on the 2D board.</p>
+                  <canvas id="scene-canvas" width="720" height="480" role="img"
+                    aria-label="Three-dimensional preview of the current board. The accessible board is available outside this menu."></canvas>
+                  <label for="scene-angle">Rotate garden</label>
+                  <input id="scene-angle" type="range" min="-180" max="180" value="35" />
+                  <button id="export-scene" class="control-button" type="button">Download Blender scene (.gltf)</button>
+                  <p id="scene-status" role="status"></p>
+                </details>
               </section>
 
               <section
@@ -316,7 +335,7 @@
                 <section class="panel-card settings-score-card">
                   <div class="panel-head">
                     <h2>Best times</h2>
-                    <p>Saved on this device for fixed levels and random boards.</p>
+                    <p>Unassisted best times on this device. Hints and daily gardens do not set records. Older records may include assisted runs.</p>
                   </div>
                   <div class="score-summary-grid">
                     <article class="stat-card">
@@ -361,13 +380,18 @@
                     <li>Place exactly one queen in every row.</li>
                     <li>Place exactly one queen in every column.</li>
                     <li>Place exactly one queen in every colored region.</li>
-                    <li>Queens cannot touch diagonally.</li>
+                    <li>Queens cannot occupy adjacent diagonal cells. Longer diagonals are allowed; this is not standard chess queen movement.</li>
                   </ul>
                   <p class="guide-note">
                     Touch: tap once for a dot, again for a queen, and once more to
                     clear. Swipe across cells when the full board fits; scroll larger
                     boards to reach every cell. Mouse or keyboard: select Queen, Mark,
                     or Erase, then activate a cell; arrow keys move around the board.
+                    Undo and Redo reverse a move or a whole swipe. Using Hint makes
+                    this attempt assisted. Daily garden uses the UTC date and cycles
+                    through the 20 saved 7 × 7 boards. Region numbers identify colors.
+                    Open Game → 3D garden to rotate or export the current position;
+                    Blender imports the download through File → Import → glTF 2.0.
                   </p>
                 </section>
               </section>
@@ -377,6 +401,6 @@
       </section>
     </main>
 
-    <script type="module" src="./src/main.js?v=0.2.5"></script>
+    <script type="module" src="./src/main.js?v=0.3.0"></script>
   </body>
 </html>

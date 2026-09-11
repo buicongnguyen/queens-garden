@@ -1,16 +1,21 @@
 {
   "name": "queens-garden",
-  "version": "0.2.5",
+  "version": "0.3.0",
   "private": true,
   "type": "module",
   "scripts": {
-    "serve": "python -m http.server 4285 --bind 127.0.0.1",
+    "serve": "node scripts/serve.js",
     "build:levels": "node scripts/build-level-db.js",
     "check:levels": "node scripts/build-level-db.js --check",
     "test": "npm run test:syntax && npm run test:unit && npm run test:levels",
-    "test:syntax": "node --check src/main.js && node --check src/engine.js && node --check src/ui-logic.js && node --check scripts/build-level-utils.js && node --check scripts/build-level-db.js && node --check scripts/validate.js",
-    "test:unit": "node --test",
+    "test:syntax": "node --check src/main.js && node --check src/engine.js && node --check src/ui-logic.js && node --check src/play-session.js && node --check src/garden-scene.js && node --check scripts/build-level-utils.js && node --check scripts/build-level-db.js && node --check scripts/validate.js",
+    "test:unit": "node --test tests/*.test.js",
+    "test:browser": "playwright test",
     "test:levels": "node scripts/validate.js",
     "verify": "npm test && npm run check:levels"
+  },
+  "devDependencies": {
+    "@playwright/test": "^1.63.0",
+    "gltf-validator": "^2.0.0-dev.3.10"
   }
 }

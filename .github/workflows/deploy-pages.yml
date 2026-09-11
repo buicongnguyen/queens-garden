@@ -31,6 +31,15 @@ jobs:
       - name: Validate generated puzzles
         run: npm run verify
 
+      - name: Install browser test dependencies
+        run: npm ci
+
+      - name: Install Chromium
+        run: npx playwright install --with-deps chromium
+
+      - name: Test game interactions and Blender export
+        run: npm run test:browser
+
   deploy:
     if: github.event_name != 'pull_request' && github.ref == 'refs/heads/main'
     environment:

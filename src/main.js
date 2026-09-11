@@ -19,6 +19,21 @@ import {
   normalizeScoreData,
   resolveCellActivation,
 } from "./ui-logic.js?v=0.2.5";
+import { createHistory, dailyChallenge, isRecordEligible } from "./play-session.js?v=0.3.0";
+import { buildGardenScene, drawGarden, gardenGLTF } from "./garden-scene.js?v=0.3.0";
+
+const history = createHistory();
+const undoButton = document.querySelector("#undo-button");
+const redoButton = document.querySelector("#redo-button");
+const dailyButton = document.querySelector("#daily-button");
+const nextButton = document.querySelector("#next-level-button");
+const completion = document.querySelector("#completion-message");
+const regionToggle = document.querySelector("#region-numbers");
+const sceneDetails = document.querySelector("#garden-scene");
+const sceneCanvas = document.querySelector("#scene-canvas");
+const sceneAngle = document.querySelector("#scene-angle");
+const exportButton = document.querySelector("#export-scene");
+const sceneStatus = document.querySelector("#scene-status");
 
 const QUEEN_ICON_PATH = "./assets/queen-token-192.png";
 const CELL_GRID_LINE = "rgba(255, 255, 255, 0.42)";
@@ -74,6 +89,8 @@ const settingsInertElements = [
 const SETTINGS_FOCUSABLE_SELECTOR = [
   "button:not([disabled])",
   "select:not([disabled])",
+  "input:not([disabled])",
+  "summary",
   "[href]",
   "[tabindex]:not([tabindex='-1'])",
 ].join(",");
@@ -129,7 +146,66 @@ const state = {
   elapsedMs: 0,
   timerId: null,
   lastScoreSummary: null,
+  assisted: false,
+  dailyDate: null,
 };
+
+undoButton.addEventListener("click", () => travelHistory("undo"));
+redoButton.addEventListener("click", () => travelHistory("redo"));
+dailyButton.addEventListener("click", () => {
+  const daily = dailyChallenge(new Date(), getLevelCount(7));
+  void buildPuzzle(7, { mode: "daily", levelIndex: daily.levelIndex, dailyDate: daily.date });
+});
+nextButton.addEventListener("click", () => {
+  if (state.mode === "fixed" && state.analysis?.solved && !state.revealedBySystem &&
+      state.levelIndex < getLevelCount(state.size)) {
+    void buildPuzzle(state.size, { mode: "fixed", levelIndex: state.levelIndex + 1 });
+  }
+});
+regionToggle.addEventListener("change", () => {
+  boardElement.classList.toggle("show-region-numbers", regionToggle.checked);
+});
+sceneDetails.addEventListener("toggle", renderGardenScene);
+sceneAngle.addEventListener("input", renderGardenScene);
+exportButton.addEventListener("click", () => {
+  if (!state.puzzle || state.loading || state.error) return;
+  const data = gardenGLTF(buildGardenScene(state.puzzle, state.board));
+  const blob = new Blob([JSON.stringify(data)], { type: "model/gltf+json" });
+  const url = URL.createObjectURL(blob);
+  const link = document.createElement("a");
+  link.href = url;
+  link.download = `queens-garden-${state.size}-${formatSeed(state.puzzle.seed)}.gltf`;
+  link.click();
+  setTimeout(() => URL.revokeObjectURL(url), 1000);
+  sceneStatus.textContent = "Scene downloaded. In Blender: File → Import → glTF 2.0.";
+});
+
+function renderGardenScene() {
+  if (!sceneDetails.open || !state.puzzle || state.loading || state.error) return;
+  const scene = buildGardenScene(state.puzzle, state.board);
+  const drawn = drawGarden(sceneCanvas, scene, Number(sceneAngle.value));
+  sceneStatus.textContent = drawn
+    ? "Current position only. Rotate the view, or download it to edit in Blender."
+    : "Preview unavailable. You can still download the scene for Blender.";
+}
+
+function travelHistory(direction) {
+  if (!canEditBoard()) return;
+  cancelActiveGesture();
+  const board = history[direction](state.board);
+  if (!board) return;
+  clearPendingLineGrace();
+  state.board = board;
+  state.analysis = analyzePlayerBoard(state.puzzle, board);
+  state.hint = null;
+  state.lastScoreSummary = null;
+  render();
+}
+
+function finishHistoryGesture(gesture) {
+  if (gesture?.beforeBoard) history.record(gesture.beforeBoard, state.board);
+  renderControlStates();
+}
 
 for (const size of SUPPORTED_SIZES) {
   const option = document.createElement("option");
@@ -282,6 +358,7 @@ boardElement.addEventListener("pointerdown", (event) => {
     boardElement.setPointerCapture(event.pointerId);
     state.gesture = {
       mode: "right-mark",
+      beforeBoard: state.board.map(row => [...row]),
       pointerId: event.pointerId,
       startKey: key,
       lastKey: key,
@@ -324,6 +401,7 @@ boardElement.addEventListener(
       startClientY: touch.clientY,
       moved: false,
       changedKeys: new Set(),
+      beforeBoard: state.board.map(row => [...row]),
       previousHint: state.hint,
     };
   },
@@ -483,6 +561,8 @@ resetButton.addEventListener("click", () => {
   state.hint = null;
   state.revealedBySystem = false;
   state.lastScoreSummary = null;
+  state.assisted = false;
+  history.clear();
   restartTimer();
   render();
   closeSettingsForGameAction();
@@ -501,6 +581,8 @@ hintButton.addEventListener("click", () => {
   }
 
   const previousHint = state.hint;
+  state.assisted = true;
+  renderSessionMeta();
   state.hint = findHint(state.puzzle, state.board, state.analysis);
   activateSettingsTab("status", { focus: true });
   renderHint();
@@ -524,6 +606,7 @@ revealButton.addEventListener("click", () => {
   state.analysis = analyzePlayerBoard(state.puzzle, state.board);
   state.hint = null;
   state.revealedBySystem = true;
+  history.clear();
   state.lastScoreSummary = null;
   stopTimer();
   render();
@@ -787,9 +870,9 @@ async function buildPuzzle(size, options = {}) {
     return;
   }
 
-  const mode = options.mode === "fixed" ? "fixed" : "random";
+  const mode = ["fixed", "daily"].includes(options.mode) ? options.mode : "random";
   const levelIndex =
-    mode === "fixed"
+    mode !== "random"
       ? clampLevelIndex(size, options.levelIndex ?? state.levelIndex ?? 1)
       : null;
   const seed = mode === "random" ? options.seed ?? randomSeed() : null;
@@ -798,6 +881,9 @@ async function buildPuzzle(size, options = {}) {
   state.error = null;
   state.size = size;
   state.mode = mode;
+  state.dailyDate = mode === "daily" ? options.dailyDate : null;
+  state.assisted = false;
+  history.clear();
   state.levelIndex = levelIndex;
   state.levelPickerSize = size;
   state.scoreSize = size;
@@ -828,12 +914,11 @@ async function buildPuzzle(size, options = {}) {
 
   try {
     state.puzzle =
-      mode === "fixed"
+      mode !== "random"
         ? createFixedLevelPuzzle(size, levelIndex)
         : createRandomLevelPuzzle(size, seed);
     state.board = createEmptyBoard(size);
     state.analysis = analyzePlayerBoard(state.puzzle, state.board);
-    restartTimer();
   } catch (error) {
     stopTimer();
     state.puzzle = null;
@@ -845,6 +930,7 @@ async function buildPuzzle(size, options = {}) {
     state.loading = false;
     boardElement.classList.remove("is-loading");
     render();
+    if (!state.error) restartTimer();
   }
 }
 
@@ -874,6 +960,17 @@ function render() {
 
 function renderControlStates() {
   const isFinished = Boolean(state.analysis?.solved || state.revealedBySystem);
+  const unavailable = state.loading || !state.puzzle || !state.analysis || Boolean(state.error);
+  undoButton.disabled = unavailable || isFinished || !history.canUndo;
+  redoButton.disabled = unavailable || isFinished || !history.canRedo;
+  dailyButton.disabled = state.loading;
+  exportButton.disabled = unavailable;
+  nextButton.hidden = state.mode !== "fixed" || !state.analysis?.solved || state.revealedBySystem;
+  nextButton.disabled = unavailable || state.levelIndex >= getLevelCount(state.size);
+  nextButton.textContent = state.levelIndex >= getLevelCount(state.size) ? "Last level reached" : "Next level";
+  completion.hidden = !state.analysis?.solved;
+  completion.textContent = state.revealedBySystem ? "Solution revealed · practice only"
+    : state.analysis?.solved ? `Garden complete · ${formatDuration(state.elapsedMs)}${state.assisted ? " · assisted" : ""}` : "";
 
   sizeSelect.value = String(state.size);
   sizeSelect.disabled = state.loading;
@@ -912,7 +1009,7 @@ function renderTools() {
 }
 
 function renderSessionMeta() {
-  sessionLabel.textContent = getSessionLabel();
+  sessionLabel.textContent = getSessionLabel() + (state.assisted ? " · assisted" : "");
   timerLabel.textContent = formatDuration(state.elapsedMs);
 }
 
@@ -942,6 +1039,7 @@ function renderSettings() {
   for (const panel of settingsPanels) {
     panel.hidden = panel.dataset.settingsPanel !== state.settingsTab;
   }
+  renderGardenScene();
 }
 
 function renderStats() {
@@ -989,6 +1087,10 @@ function renderStatus() {
 
   if (state.analysis.solved) {
     const solvedText = `Solved in ${formatDuration(state.elapsedMs)}.`;
+    if (state.assisted || state.mode === "daily") {
+      updateStatus(`${solvedText} ${state.assisted ? "Assisted practice: no best-time record." : "Daily garden complete. Come back tomorrow (UTC)."}`);
+      return;
+    }
     const scoreText = describeScoreSummary(state.lastScoreSummary);
     updateStatus(scoreText ? `${solvedText} ${scoreText}` : solvedText);
     return;
@@ -1272,6 +1374,10 @@ function ensureBoardStructure() {
       const cell = document.createElement("button");
       const warning = document.createElement("span");
       const token = document.createElement("span");
+      const regionLabel = document.createElement("span");
+      regionLabel.className = "region-number";
+      regionLabel.textContent = String(region + 1);
+      regionLabel.setAttribute("aria-hidden", "true");
 
       cell.type = "button";
       cell.className = "cell";
@@ -1318,6 +1424,7 @@ function ensureBoardStructure() {
       token.className = "token";
       cell.append(warning);
       cell.append(token);
+      cell.append(regionLabel);
       boardRowElement.append(cell);
 
       state.cellElements[row][column] = cell;
@@ -1552,6 +1659,7 @@ function finishGesture(event) {
   if (event.type === "pointercancel") {
     rollbackTouchMarks(gesture);
   }
+  finishHistoryGesture(gesture);
 }
 
 function finishTouchGesture(event) {
@@ -1584,6 +1692,7 @@ function finishTouchGesture(event) {
   if (event.type === "touchcancel") {
     rollbackTouchMarks(gesture);
   }
+  finishHistoryGesture(gesture);
 }
 
 function cancelActiveGesture() {
@@ -1599,12 +1708,13 @@ function cancelActiveGesture() {
   }
 
   state.gesture = null;
+  finishHistoryGesture(gesture);
 }
 
 function cancelGestureForMultiTouch() {
   const gesture = state.gesture;
-  cancelActiveGesture();
   rollbackTouchMarks(gesture);
+  cancelActiveGesture();
   state.suppressClick = true;
   state.lastPointerType = null;
 }
@@ -1657,9 +1767,11 @@ function commitBoardChange(row, column, nextValue, options = {}) {
 
   const previousAnalysis = state.analysis;
   const previousHint = state.hint;
+  const beforeBoard = state.gesture ? null : state.board.map(row => [...row]);
   clearPendingLineGrace();
 
   state.board[row][column] = nextValue;
+  if (beforeBoard) history.record(beforeBoard, state.board);
   state.analysis = analyzePlayerBoard(state.puzzle, state.board);
   state.hint = null;
   state.lastScoreSummary = null;
@@ -1676,7 +1788,9 @@ function commitBoardChange(row, column, nextValue, options = {}) {
 
   if (didSolve) {
     stopTimer();
-    state.lastScoreSummary = recordBestTime();
+    if (isRecordEligible({ assisted: state.assisted, revealed: state.revealedBySystem, mode: state.mode })) {
+      state.lastScoreSummary = recordBestTime();
+    }
   }
 
   renderSessionMeta();
@@ -2018,6 +2132,7 @@ function describeScoreSummary(summary) {
 function getSessionLabel() {
   const sizeLabel = `${state.size} x ${state.size}`;
   const levelCount = getLevelCount(state.size);
+  if (state.mode === "daily") return `Daily garden · ${state.dailyDate} UTC · ${sizeLabel}`;
 
   if (state.loading && state.mode === "fixed" && state.levelIndex) {
     return `Loading level ${padLevel(state.levelIndex)} / ${levelCount} · ${sizeLabel}`;

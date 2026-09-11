@@ -729,6 +729,25 @@ select:focus-visible,
   justify-content: safe center;
 }
 
+.play-actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.45rem;
+  margin-top: 0.6rem;
+}
+
+.play-actions .control-button { padding: 0.45rem 0.7rem; }
+.region-toggle { display: inline-flex; align-items: center; gap: 0.35rem; font-size: 0.85rem; }
+.completion-message { padding: 0.6rem; border-radius: 12px; background: #e1efce; color: #26452f; }
+.region-number { display: none; position: absolute; left: 3px; top: 2px; font-size: clamp(8px, 1.3vw, 12px); color: #182e29; background: #ffffffdd; border-radius: 3px; padding: 0 2px; pointer-events: none; z-index: 3; line-height: 1.25; }
+.show-region-numbers .region-number { display: block; }
+.garden-scene { margin-top: 0.8rem; }
+.garden-scene summary { cursor: pointer; font-weight: 700; }
+.garden-scene p { font-size: 0.85rem; line-height: 1.5; }
+.garden-scene canvas { display: block; width: 100%; height: auto; border-radius: 12px; margin: 0.7rem 0; }
+.garden-scene input[type="range"] { display: block; width: 100%; margin: 0.7rem 0; }
+
 .board {
   --size: 7;
   display: grid;
