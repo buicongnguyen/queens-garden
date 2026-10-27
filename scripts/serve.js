@@ -5,6 +5,7 @@ import { resolve, extname, sep } from "node:path";
 
 const root = fileURLToPath(new URL("../", import.meta.url));
 const port = Number(process.env.PORT || 4285);
+const host = process.env.HOST || "127.0.0.1";
 const types = {
   ".html": "text/html",
   ".css": "text/css",
@@ -48,6 +49,6 @@ createServer(async (req, res) => {
     res.writeHead(404);
     res.end();
   }
-}).listen(port, "127.0.0.1", () =>
-  console.log(`Queen's Garden: http://127.0.0.1:${port}`),
+}).listen(port, host, () =>
+  console.log(`Queen's Garden: http://${host}:${port}`),
 );

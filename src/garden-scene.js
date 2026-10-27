@@ -84,10 +84,12 @@ function box(name, x, y, z, width, height, depth, color, extras) {
     ],
     color,
     extras,
+    shape: [width, height, depth],
+    translation: [x, y, z],
   };
 }
 
-export function buildGardenScene(puzzle, board) {
+export function buildGardenScene(puzzle, board, { compact = false } = {}) {
   const n = puzzle.size;
   if (
     !Number.isInteger(n) ||
@@ -124,8 +126,10 @@ export function buildGardenScene(puzzle, board) {
       );
       if (board[r][c] === 1) {
         for (const template of QUEEN_MODEL) {
-          const positions = template.positions.map((value, i) => value + [x, 0.08, z][i % 3]);
-          meshes.push({ ...template, positions, name: `${template.name} R${r + 1} C${c + 1}`, extras: meta });
+          const translation = [x, 0.08, z];
+          const positions = compact ? template.positions : template.positions.map((value, i) => value + translation[i % 3]);
+          meshes.push({ ...template, positions, geometryKey: template.name, local: compact, translation,
+            name: `${template.name} R${r + 1} C${c + 1}`, extras: meta });
         }
         continue;
       } else if (board[r][c] === 2) {
@@ -173,7 +177,8 @@ export function gardenGLTF(scene) {
     byteLength += data.byteLength;
     return index;
   }
-  for (const mesh of scene.meshes) {
+  for (const source of scene.meshes) {
+    const mesh = source.local ? {...source, positions: source.positions.map((v,i)=>v+source.translation[i%3])} : source;
     const materialKey = `${mesh.color}/${mesh.metallic ?? 0}/${mesh.roughness ?? 0.36}`;
     if (!colorMap.has(materialKey)) {
       colorMap.set(materialKey, materials.length);

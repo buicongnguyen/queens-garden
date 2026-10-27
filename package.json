@@ -1,11 +1,12 @@
 {
   "name": "queens-garden",
-  "version": "0.4.0",
+  "version": "0.4.1",
   "private": true,
   "type": "module",
   "scripts": {
     "serve": "node scripts/serve.js",
     "build:renderer": "node scripts/build-renderer.js",
+    "profile:garden": "node scripts/profile-garden.mjs",
     "build:levels": "node scripts/build-level-db.js",
     "check:levels": "node scripts/build-level-db.js --check",
     "test": "npm run test:syntax && npm run test:unit && npm run test:levels",

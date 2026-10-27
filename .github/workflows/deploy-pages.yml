@@ -28,11 +28,11 @@ jobs:
         with:
           node-version: 22
 
-      - name: Validate generated puzzles
-        run: npm run verify
-
       - name: Install browser test dependencies
         run: npm ci
+
+      - name: Validate generated puzzles
+        run: npm run verify
 
       - name: Verify committed renderer bundle
         run: |

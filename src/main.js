@@ -20,7 +20,7 @@ import {
   resolveCellActivation,
 } from "./ui-logic.js?v=0.2.5";
 import { createHistory, dailyChallenge, isRecordEligible } from "./play-session.js?v=0.3.0";
-import { buildGardenScene, gardenGLTF } from "./garden-scene.js?v=0.4.0";
+import { buildGardenScene, gardenGLTF } from "./garden-scene.js?v=0.4.1";
 
 const history = createHistory();
 const undoButton = document.querySelector("#undo-button");
@@ -183,19 +183,19 @@ exportButton.addEventListener("click", () => {
 
 let sceneCache, sceneCacheKey, rendererPromise, sceneRequest = 0;
 async function renderGardenScene() {
-  if (!sceneDetails.open || !state.puzzle || state.loading || state.error) return;
+  if (!state.settingsOpen || state.settingsTab !== 'game' || !sceneDetails.open || !state.puzzle || state.loading || state.error) return;
   const request = ++sceneRequest;
   const detail = document.querySelector('#scene-detail').checked;
   const key = detail ? 'queen-detail' : JSON.stringify([state.puzzle.regions, state.puzzle.palette, state.board]);
   if (sceneCacheKey !== key) {
-    sceneCache = detail ? buildGardenScene({size: 1, regions: [[0]], palette: ['hsl(150 20% 25%)']}, [[1]]) : buildGardenScene(state.puzzle, state.board);
+    sceneCache = detail ? buildGardenScene({size: 1, regions: [[0]], palette: ['hsl(150 20% 25%)']}, [[1]], {compact: true}) : buildGardenScene(state.puzzle, state.board, {compact: true});
     sceneCacheKey = key;
   }
   let drawn = false;
   try {
-    rendererPromise ??= import('./garden-renderer.js?v=0.4.0');
+    rendererPromise ??= import('./garden-renderer.js?v=0.4.1');
     const { drawGarden } = await rendererPromise;
-    if (request !== sceneRequest || !sceneDetails.open) return;
+    if (request !== sceneRequest || !state.settingsOpen || state.settingsTab !== 'game' || !sceneDetails.open) return;
     drawn = drawGarden(sceneCanvas, sceneCache, Number(sceneAngle.value));
   } catch { rendererPromise = null; }
   sceneStatus.textContent = drawn

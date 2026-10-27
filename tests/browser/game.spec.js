@@ -143,6 +143,53 @@ test('WebGL failure keeps game and scene export available', async ({ page }) => 
   expect(data.asset.version).toBe('2.0');
 });
 
+test('3D cached scene and studio lighting recover after WebGL context restoration', async ({page}) => {
+  await cell(page,0,0).click();
+  await page.getByRole('button',{name:'Menu',exact:true}).click();
+  await page.getByText('3D garden · Blender export',{exact:true}).click();
+  await expect(page.locator('#scene-status')).toContainText('Current position only');
+  const before=await page.locator('canvas').evaluate(c=>c.toDataURL());
+  await page.locator('canvas').evaluate(c=>new Promise((resolve,reject)=>{
+    const gl=c.getContext('webgl2'), extension=gl.getExtension('WEBGL_lose_context');
+    if(!extension) return reject(new Error('Context-loss extension unavailable in test browser'));
+    const timer=setTimeout(()=>reject(new Error('Context did not restore')),10000);
+    c.addEventListener('webglcontextlost',()=>setTimeout(()=>extension.restoreContext(),100),{once:true});
+    c.addEventListener('webglcontextrestored',()=>{clearTimeout(timer);resolve();},{once:true});
+    extension.loseContext();
+  }));
+  await expect.poll(()=>page.locator('canvas').evaluate(c=>c.toDataURL())).toBe(before);
+});
+
+for (const mobile of [false, true]) test(`3D reuse preserves edits, rotation, and hidden-menu inactivity (${mobile ? 'phone' : 'desktop'})`, async ({page}) => {
+  if(mobile) await page.setViewportSize({width:390,height:844});
+  await cell(page,0,0).click();
+  await page.evaluate(()=>{
+    window.rawDraws=0;
+    for(const name of ['drawElements','drawArrays','drawElementsInstanced','drawArraysInstanced']) {
+      const original=WebGL2RenderingContext.prototype[name];
+      WebGL2RenderingContext.prototype[name]=function(...args){window.rawDraws++;return original.apply(this,args);};
+    }
+  });
+  await page.getByRole('button',{name:'Menu',exact:true}).click();
+  await page.getByText('3D garden · Blender export',{exact:true}).click();
+  await expect(page.locator('#scene-status')).toContainText('Current position only');
+  await page.evaluate(()=>window.rawDraws=0);
+  await page.getByLabel('Rotate garden').fill('90');
+  await expect.poll(()=>page.evaluate(()=>window.rawDraws)).toBeGreaterThan(0);
+  expect(await page.evaluate(()=>window.rawDraws)).toBeLessThanOrEqual(20);
+  const before=await page.locator('canvas').evaluate(c=>c.toDataURL());
+  await page.evaluate(()=>{window.rawDraws=0;document.querySelector('#scene-angle').dispatchEvent(new Event('input'));});
+  await page.waitForTimeout(100);
+  expect(await page.evaluate(()=>window.rawDraws)).toBe(0);
+  await page.keyboard.press('Escape');
+  await cell(page,1,2).click();
+  await page.waitForTimeout(100);
+  expect(await page.evaluate(()=>window.rawDraws)).toBe(0);
+  await page.getByRole('button',{name:'Menu',exact:true}).click();
+  await expect.poll(()=>page.locator('canvas').evaluate(c=>c.toDataURL())).not.toBe(before);
+  expect(await page.evaluate(()=>window.rawDraws)).toBeGreaterThan(0);
+});
+
 test("large mobile board scrolls and controls remain reachable", async ({
   page,
 }) => {
